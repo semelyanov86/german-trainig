@@ -12,6 +12,9 @@ type Config struct {
 	ElevenAPIKey  string
 	ElevenVoiceID string
 	ElevenModel   string
+	OpenAIAPIKey  string
+	OpenAIModel   string
+	OpenAIVoice   string
 	TTSEngine     string
 	ClaudeModel   string
 	PiperModel    string
@@ -49,6 +52,12 @@ func Load(path string) (*Config, error) {
 			cfg.ElevenVoiceID = val
 		case "ELEVENLABS_MODEL":
 			cfg.ElevenModel = val
+		case "OPENAI_TTS_API_KEY":
+			cfg.OpenAIAPIKey = val
+		case "OPENAI_TTS_MODEL":
+			cfg.OpenAIModel = val
+		case "OPENAI_TTS_VOICE":
+			cfg.OpenAIVoice = val
 		case "TTS_ENGINE":
 			cfg.TTSEngine = val
 		case "CLAUDE_MODEL":

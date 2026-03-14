@@ -11,12 +11,19 @@ type Config struct {
 	ElevenAPIKey  string
 	ElevenVoiceID string
 	ElevenModel   string
+	OpenAIAPIKey  string
+	OpenAIModel   string
+	OpenAIVoice   string
 	PiperModel    string
 }
 
 func New(engine string, cfg Config, logger *log.Logger) Synthesizer {
-	if engine == "elevenlabs" {
+	switch engine {
+	case "elevenlabs":
 		return &ElevenLabsSynth{cfg: cfg, logger: logger}
+	case "openai":
+		return &OpenAISynth{cfg: cfg, logger: logger}
+	default:
+		return &PiperSynth{cfg: cfg, logger: logger}
 	}
-	return &PiperSynth{cfg: cfg, logger: logger}
 }

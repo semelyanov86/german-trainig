@@ -3,7 +3,7 @@
 Asterisk AGI application for practicing spoken German through phone calls.
 
 ```
-User calls → Asterisk AGI → Groq Whisper (STT) → Claude CLI (LLM) → ElevenLabs/Piper (TTS) → audio back to user
+User calls → Asterisk AGI → Groq Whisper (STT) → Claude CLI (LLM) → OpenAI/ElevenLabs/Piper (TTS) → audio back to user
 ```
 
 ## Prerequisites
@@ -25,6 +25,7 @@ internal/
   stt/groq.go                 — Speech-to-Text via Groq Whisper API
   tts/
     tts.go                    — TTS interface and factory
+    openai.go                 — OpenAI cloud TTS
     elevenlabs.go             — ElevenLabs cloud TTS
     piper.go                  — Piper local TTS
   llm/claude.go               — LLM via Claude CLI
@@ -53,7 +54,10 @@ GROQ_API_KEY=gsk_your_key_here
 ELEVENLABS_API_KEY=sk_your_key_here
 ELEVENLABS_VOICE_ID=EXAVITQu4vr4xnSDxMaL
 ELEVENLABS_MODEL=eleven_flash_v2_5
-TTS_ENGINE=elevenlabs
+OPENAI_TTS_API_KEY=sk-your_openai_key_here
+OPENAI_TTS_MODEL=tts-1
+OPENAI_TTS_VOICE=nova
+TTS_ENGINE=openai
 CLAUDE_MODEL=sonnet
 PIPER_MODEL=/root/piper-voices/de_DE-kerstin-low.onnx
 SKILL_FILE=/root/.claude/skills/german_tutor_skill/SKILL.md
@@ -123,14 +127,32 @@ Dial `555` from a SIP phone connected to Asterisk. Music plays while the AI gene
 
 ## Switching TTS engine
 
-Edit `/etc/german-trainer/.env`:
+Edit `TTS_ENGINE` in `/etc/german-trainer/.env`:
 
-```
-TTS_ENGINE=elevenlabs   # cloud (realistic voice)
-TTS_ENGINE=piper        # local (free, no API needed)
+| Value | Engine | Notes |
+|---|---|---|
+| `openai` | OpenAI TTS | Voices: `nova` (female), `alloy`, `shimmer`, `echo` (male), `fable`, `onyx` (male, deep). Models: `tts-1` (fast), `tts-1-hd` (quality) |
+| `elevenlabs` | ElevenLabs | Realistic voices. Free tier: 10 min/month |
+| `piper` | Piper (local) | Free, no API needed, runs offline. Requires piper-tts + voice model |
+
+Example — switch to OpenAI with a different voice:
+```bash
+# Edit /etc/german-trainer/.env
+TTS_ENGINE=openai
+OPENAI_TTS_VOICE=shimmer
+
+# No rebuild needed, just update the env file
 ```
 
-Then redeploy: `task deploy`
+Example — switch to ElevenLabs:
+```bash
+TTS_ENGINE=elevenlabs
+```
+
+Example — switch to local Piper:
+```bash
+TTS_ENGINE=piper
+```
 
 ## How it works
 
