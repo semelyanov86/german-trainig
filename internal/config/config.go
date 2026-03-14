@@ -8,19 +8,21 @@ import (
 )
 
 type Config struct {
-	GroqAPIKey    string
-	ElevenAPIKey  string
-	ElevenVoiceID string
-	ElevenModel   string
-	OpenAIAPIKey  string
-	OpenAIModel   string
-	OpenAIVoice   string
-	TTSEngine     string
-	ClaudeModel   string
-	PiperModel    string
-	SkillFile     string
-	ClaudeBin     string
-	HistoryDir    string
+	GroqAPIKey          string
+	ElevenAPIKey        string
+	ElevenVoiceID       string
+	ElevenModel         string
+	OpenAIAPIKey        string
+	OpenAIModel         string
+	OpenAIVoice         string
+	TTSEngine           string
+	ClaudeModel         string
+	PiperModel          string
+	SkillFile          string
+	ClaudeBin          string
+	HistoryDir          string
+	NotifyWebhookURL    string
+	NotifyWebhookToken  string
 }
 
 func Load(path string) (*Config, error) {
@@ -70,6 +72,10 @@ func Load(path string) (*Config, error) {
 			cfg.ClaudeBin = val
 		case "HISTORY_DIR":
 			cfg.HistoryDir = val
+		case "NOTIFY_WEBHOOK_URL":
+			cfg.NotifyWebhookURL = val
+		case "NOTIFY_WEBHOOK_TOKEN":
+			cfg.NotifyWebhookToken = val
 		}
 	}
 	return cfg, sc.Err()

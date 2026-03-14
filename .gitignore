@@ -1,4 +1,4 @@
 .env
-german_trainer
-german_trainer_wrapper
+/german_trainer
+/german_trainer_wrapper
 .task/
