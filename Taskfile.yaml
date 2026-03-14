@@ -1,0 +1,53 @@
+version: '3'
+
+vars:
+  AGI_DIR: /usr/local/var/lib/asterisk/agi-bin
+  ENV_DIR: /etc/german-trainer
+
+tasks:
+  build:
+    desc: Compile Go binary and C wrapper
+    cmds:
+      - go build -o german_trainer ./cmd/german_trainer
+      - gcc -o german_trainer_wrapper deploy/agi_wrapper.c
+    sources:
+      - cmd/**/*.go
+      - internal/**/*.go
+      - deploy/agi_wrapper.c
+    generates:
+      - german_trainer
+      - german_trainer_wrapper
+
+  install:
+    desc: Build and deploy to Asterisk AGI directory
+    deps: [build]
+    cmds:
+      - mkdir -p {{.ENV_DIR}}
+      - test -f {{.ENV_DIR}}/.env || (cp .env.example {{.ENV_DIR}}/.env && echo "Created {{.ENV_DIR}}/.env — edit it with your API keys")
+      - cp german_trainer {{.AGI_DIR}}/german_trainer
+      - cp german_trainer_wrapper {{.AGI_DIR}}/german_trainer_wrapper
+      - chown root:root {{.AGI_DIR}}/german_trainer_wrapper
+      - chmod 4755 {{.AGI_DIR}}/german_trainer_wrapper
+      - chmod 755 {{.AGI_DIR}}/german_trainer
+      - echo "Installed. Reload dialplan{{":"}} asterisk -rx 'dialplan reload'"
+
+  reload:
+    desc: Reload Asterisk dialplan
+    cmds:
+      - asterisk -rx "dialplan reload"
+
+  deploy:
+    desc: Build, install and reload dialplan
+    cmds:
+      - task: install
+      - task: reload
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -f german_trainer german_trainer_wrapper
+
+  logs:
+    desc: Tail the AGI log
+    cmds:
+      - tail -f /tmp/german_trainer.log
