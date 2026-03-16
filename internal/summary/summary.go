@@ -62,7 +62,41 @@ func (s *Summarizer) callClaude(history string) (string, error) {
 		}
 		return "", fmt.Errorf("claude error: %w", err)
 	}
-	return strings.TrimSpace(string(output)), nil
+	return stripMarkdown(strings.TrimSpace(string(output))), nil
+}
+
+func stripMarkdown(s string) string {
+	var lines []string
+	for _, line := range strings.Split(s, "\n") {
+		// Remove heading markers (#, ##, ###)
+		trimmed := strings.TrimLeft(line, "#")
+		if trimmed != line {
+			trimmed = strings.TrimSpace(trimmed)
+		}
+		// Skip horizontal rules
+		stripped := strings.TrimSpace(trimmed)
+		if stripped == "---" || stripped == "***" || stripped == "===" {
+			continue
+		}
+		// Remove bold/italic markers
+		trimmed = strings.ReplaceAll(trimmed, "**", "")
+		trimmed = strings.ReplaceAll(trimmed, "__", "")
+		trimmed = strings.ReplaceAll(trimmed, "*", "")
+		// Skip table separator rows (|---|---|)
+		if strings.Contains(trimmed, "|") && strings.Contains(trimmed, "---") {
+			continue
+		}
+		// Clean table pipes
+		if strings.Contains(trimmed, "|") {
+			trimmed = strings.ReplaceAll(trimmed, " | ", " — ")
+			trimmed = strings.TrimPrefix(trimmed, "| ")
+			trimmed = strings.TrimSuffix(trimmed, " |")
+			trimmed = strings.TrimPrefix(trimmed, "|")
+			trimmed = strings.TrimSuffix(trimmed, "|")
+		}
+		lines = append(lines, trimmed)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (s *Summarizer) sendWebhook(report string) error {
