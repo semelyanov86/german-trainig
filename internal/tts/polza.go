@@ -1,6 +1,7 @@
 package tts
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,28 +60,39 @@ func (p *PolzaSynth) Synthesize(text string) (string, []string, error) {
 		return "", nil, fmt.Errorf("polza tts: empty audio in response")
 	}
 
-	// Download the audio file from the returned URL
 	mp3File := fmt.Sprintf("/tmp/tts_%s_%d.mp3", p.cfg.SessionID, time.Now().UnixNano())
 
-	audioResp, err := http.Get(result.Audio)
-	if err != nil {
-		return "", nil, fmt.Errorf("download audio: %w", err)
-	}
-	defer audioResp.Body.Close()
+	if strings.HasPrefix(result.Audio, "http://") || strings.HasPrefix(result.Audio, "https://") {
+		// Audio field is a URL — download it
+		audioResp, err := http.Get(result.Audio)
+		if err != nil {
+			return "", nil, fmt.Errorf("download audio: %w", err)
+		}
+		defer audioResp.Body.Close()
 
-	if audioResp.StatusCode != 200 {
-		return "", nil, fmt.Errorf("download audio HTTP %d", audioResp.StatusCode)
-	}
+		if audioResp.StatusCode != 200 {
+			return "", nil, fmt.Errorf("download audio HTTP %d", audioResp.StatusCode)
+		}
 
-	out, err := os.Create(mp3File)
-	if err != nil {
-		return "", nil, fmt.Errorf("create mp3: %w", err)
-	}
-	if _, err := io.Copy(out, audioResp.Body); err != nil {
+		out, err := os.Create(mp3File)
+		if err != nil {
+			return "", nil, fmt.Errorf("create mp3: %w", err)
+		}
+		if _, err := io.Copy(out, audioResp.Body); err != nil {
+			out.Close()
+			return "", nil, fmt.Errorf("write mp3: %w", err)
+		}
 		out.Close()
-		return "", nil, fmt.Errorf("write mp3: %w", err)
+	} else {
+		// Audio field is base64-encoded data
+		decoded, err := base64.StdEncoding.DecodeString(result.Audio)
+		if err != nil {
+			return "", nil, fmt.Errorf("decode base64 audio: %w", err)
+		}
+		if err := os.WriteFile(mp3File, decoded, 0644); err != nil {
+			return "", nil, fmt.Errorf("write mp3: %w", err)
+		}
 	}
-	out.Close()
 
 	out8k := mp3File[:len(mp3File)-4] + "_8k.wav"
 

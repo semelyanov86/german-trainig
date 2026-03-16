@@ -113,7 +113,7 @@ func main() {
 	}
 
 	sess.WriteHistory("Tutor", greeting)
-	if !playTTS(ch, sess, synthesizer, greeting) {
+	if !playTTS(ch, sess, synthesizer, greeting, logger) {
 		return
 	}
 
@@ -150,7 +150,7 @@ func main() {
 			nudge, _ := claude.Call(systemPrompt, sess.ReadHistory(), "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen.")
 			if nudge != "" {
 				sess.WriteHistory("Tutor", nudge)
-				playTTS(ch, sess, synthesizer, nudge)
+				playTTS(ch, sess, synthesizer, nudge, logger)
 			}
 			if !ch.IsAlive() {
 				break
@@ -167,7 +167,7 @@ func main() {
 				fw = "Tschüss! Bis zum nächsten Mal!"
 			}
 			sess.WriteHistory("Tutor", fw)
-			playTTS(ch, sess, synthesizer, fw)
+			playTTS(ch, sess, synthesizer, fw, logger)
 			break
 		}
 
@@ -193,7 +193,7 @@ func main() {
 		}
 
 		sess.WriteHistory("Tutor", response)
-		if !playTTS(ch, sess, synthesizer, response) {
+		if !playTTS(ch, sess, synthesizer, response, logger) {
 			break
 		}
 	}
@@ -204,10 +204,10 @@ func main() {
 	}
 }
 
-func playTTS(ch *agi.Channel, sess *session.Session, synth tts.Synthesizer, text string) bool {
+func playTTS(ch *agi.Channel, sess *session.Session, synth tts.Synthesizer, text string, logger *log.Logger) bool {
 	wavPath, tmpFiles, err := synth.Synthesize(text)
 	if err != nil {
-		log.Printf("ERROR synthesizing: %v", err)
+		logger.Printf("ERROR synthesizing: %v", err)
 		return ch.IsAlive()
 	}
 	sess.AddTempFiles(tmpFiles...)
