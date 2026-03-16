@@ -42,8 +42,8 @@ func main() {
 
 	ch := agi.NewChannel(os.Stdin, os.Stdout, logger)
 	ch.ReadVars()
-	logger.Printf("AGI started, channel=%s callerid=%s tts=%s",
-		ch.Vars["agi_channel"], ch.Vars["agi_callerid"], cfg.TTSEngine)
+	logger.Printf("AGI started, channel=%s callerid=%s tts=%s stt=%s",
+		ch.Vars["agi_channel"], ch.Vars["agi_callerid"], cfg.TTSEngine, cfg.STTEngine)
 
 	sess := session.New(cfg.HistoryDir, logger)
 	logger.Printf("Session %s, history: %s", sess.ID, sess.HistoryFile)
@@ -60,7 +60,11 @@ func main() {
 		sess.Cleanup()
 	}()
 
-	transcriber := stt.NewGroqTranscriber(cfg.GroqAPIKey, logger)
+	transcriber := stt.New(cfg.STTEngine, stt.Config{
+		GroqAPIKey:    cfg.GroqAPIKey,
+		PolzaAPIKey:   cfg.PolzaAPIKey,
+		PolzaSTTModel: cfg.PolzaSTTModel,
+	}, logger)
 	synthesizer := tts.New(cfg.TTSEngine, tts.Config{
 		SessionID:     sess.ID,
 		ElevenAPIKey:  cfg.ElevenAPIKey,
@@ -70,6 +74,9 @@ func main() {
 		OpenAIModel:   cfg.OpenAIModel,
 		OpenAIVoice:   cfg.OpenAIVoice,
 		PiperModel:    cfg.PiperModel,
+		PolzaAPIKey:   cfg.PolzaAPIKey,
+		PolzaTTSModel: cfg.PolzaTTSModel,
+		PolzaTTSVoice: cfg.PolzaTTSVoice,
 	}, logger)
 	claude := llm.NewClaude(cfg.ClaudeBin, cfg.ClaudeModel, cfg.HistoryDir, logger)
 

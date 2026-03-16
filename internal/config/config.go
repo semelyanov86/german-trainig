@@ -16,6 +16,7 @@ type Config struct {
 	OpenAIModel         string
 	OpenAIVoice         string
 	TTSEngine           string
+	STTEngine           string
 	ClaudeModel         string
 	PiperModel          string
 	SkillFile          string
@@ -23,6 +24,10 @@ type Config struct {
 	HistoryDir          string
 	NotifyWebhookURL    string
 	NotifyWebhookToken  string
+	PolzaAPIKey         string
+	PolzaSTTModel       string
+	PolzaTTSModel       string
+	PolzaTTSVoice       string
 }
 
 func Load(path string) (*Config, error) {
@@ -76,6 +81,16 @@ func Load(path string) (*Config, error) {
 			cfg.NotifyWebhookURL = val
 		case "NOTIFY_WEBHOOK_TOKEN":
 			cfg.NotifyWebhookToken = val
+		case "STT_ENGINE":
+			cfg.STTEngine = val
+		case "POLZA_API_KEY":
+			cfg.PolzaAPIKey = val
+		case "POLZA_STT_MODEL":
+			cfg.PolzaSTTModel = val
+		case "POLZA_TTS_MODEL":
+			cfg.PolzaTTSModel = val
+		case "POLZA_TTS_VOICE":
+			cfg.PolzaTTSVoice = val
 		}
 	}
 	return cfg, sc.Err()

@@ -15,6 +15,9 @@ type Config struct {
 	OpenAIModel   string
 	OpenAIVoice   string
 	PiperModel    string
+	PolzaAPIKey   string
+	PolzaTTSModel string
+	PolzaTTSVoice string
 }
 
 func New(engine string, cfg Config, logger *log.Logger) Synthesizer {
@@ -23,6 +26,8 @@ func New(engine string, cfg Config, logger *log.Logger) Synthesizer {
 		return &ElevenLabsSynth{cfg: cfg, logger: logger}
 	case "openai":
 		return &OpenAISynth{cfg: cfg, logger: logger}
+	case "polza":
+		return &PolzaSynth{cfg: cfg, logger: logger}
 	default:
 		return &PiperSynth{cfg: cfg, logger: logger}
 	}
