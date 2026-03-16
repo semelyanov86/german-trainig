@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -50,8 +51,9 @@ func (s *Summarizer) Run(historyContent string) error {
 func (s *Summarizer) callClaude(history string) (string, error) {
 	prompt := fmt.Sprintf("/german-summary\n\nВот транскрипт разговора:\n\n%s", history)
 
-	cmd := exec.Command(s.claudeBin, "-p", prompt)
+	cmd := exec.Command(s.claudeBin, "-p", prompt, "--output-format", "text")
 	cmd.Dir = s.workDir
+	cmd.Env = append(os.Environ(), "HOME=/root")
 
 	output, err := cmd.Output()
 	if err != nil {

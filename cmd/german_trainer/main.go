@@ -11,7 +11,6 @@ import (
 	"german-trainer/internal/farewell"
 	"german-trainer/internal/llm"
 	"german-trainer/internal/session"
-	"german-trainer/internal/skill"
 	"german-trainer/internal/stt"
 	"german-trainer/internal/summary"
 	"german-trainer/internal/tts"
@@ -85,13 +84,6 @@ func main() {
 		return
 	}
 
-	skillContent, err := os.ReadFile(cfg.SkillFile)
-	if err != nil {
-		logger.Printf("ERROR reading skill file: %v", err)
-		return
-	}
-	systemPrompt := skill.ExtractContent(string(skillContent))
-
 	// Play music while generating greeting
 	ch.Cmd("EXEC StartMusicOnHold default")
 	if !ch.IsAlive() {
@@ -99,7 +91,7 @@ func main() {
 	}
 
 	logger.Println("Generating initial greeting...")
-	greeting, err := claude.Call(systemPrompt, "", "Starte ein neues Gespräch. Begrüße den Anrufer und schlage ein Thema vor.")
+	greeting, err := claude.Call("", "Starte ein neues Gespräch. Begrüße den Anrufer und schlage ein Thema vor.")
 	if err != nil {
 		logger.Printf("ERROR initial claude call: %v", err)
 		ch.Cmd("EXEC StopMusicOnHold")
@@ -147,7 +139,7 @@ func main() {
 		userText = strings.TrimSpace(userText)
 		if userText == "" {
 			logger.Println("Empty transcription, skipping")
-			nudge, _ := claude.Call(systemPrompt, sess.ReadHistory(), "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen.")
+			nudge, _ := claude.Call(sess.ReadHistory(), "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen.")
 			if nudge != "" {
 				sess.WriteHistory("Tutor", nudge)
 				playTTS(ch, sess, synthesizer, nudge, logger)
@@ -162,7 +154,7 @@ func main() {
 		if farewell.IsFarewell(userText) {
 			logger.Println("Farewell detected")
 			sess.WriteHistory("User", userText)
-			fw, _ := claude.Call(systemPrompt, sess.ReadHistory(), userText)
+			fw, _ := claude.Call(sess.ReadHistory(), userText)
 			if fw == "" {
 				fw = "Tschüss! Bis zum nächsten Mal!"
 			}
@@ -179,7 +171,7 @@ func main() {
 		}
 
 		history := sess.ReadHistory()
-		response, err := claude.Call(systemPrompt, history, userText)
+		response, err := claude.Call(history, userText)
 		if err != nil {
 			logger.Printf("ERROR calling claude: %v", err)
 			ch.Cmd("EXEC StopMusicOnHold")

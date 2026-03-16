@@ -19,18 +19,15 @@ func NewClaude(bin, model, workDir string, logger *log.Logger) *Claude {
 	return &Claude{bin: bin, model: model, workDir: workDir, logger: logger}
 }
 
-func (c *Claude) Call(systemPrompt, history, userMessage string) (string, error) {
-	prompt := userMessage
+func (c *Claude) Call(history, userMessage string) (string, error) {
+	var prompt string
 	if history != "" {
-		prompt = fmt.Sprintf("Gesprächsverlauf:\n%s\n\nLetzte Nachricht des Nutzers: %s\n\nAntworte nur auf die letzte Nachricht.", history, userMessage)
+		prompt = fmt.Sprintf("/german_tutor_skill\n\nGesprächsverlauf:\n%s\n\nLetzte Nachricht des Nutzers: %s\n\nAntworte nur auf die letzte Nachricht.", history, userMessage)
+	} else {
+		prompt = fmt.Sprintf("/german_tutor_skill\n\n%s", userMessage)
 	}
 
-	cmd := exec.Command(c.bin,
-		"-p", prompt,
-		"--model", c.model,
-		"--system-prompt", systemPrompt,
-		"--no-session-persistence",
-	)
+	cmd := exec.Command(c.bin, "-p", prompt, "--output-format", "text")
 	cmd.Dir = c.workDir
 	cmd.Env = append(os.Environ(), "HOME=/root")
 
