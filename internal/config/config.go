@@ -20,6 +20,7 @@ type Config struct {
 	ClaudeModel         string
 	PiperModel          string
 	SkillFile          string
+	SummarySkillFile   string
 	ClaudeBin          string
 	HistoryDir          string
 	NotifyWebhookURL    string
@@ -73,6 +74,8 @@ func Load(path string) (*Config, error) {
 			cfg.PiperModel = val
 		case "SKILL_FILE":
 			cfg.SkillFile = val
+		case "SUMMARY_SKILL_FILE":
+			cfg.SummarySkillFile = val
 		case "CLAUDE_BIN":
 			cfg.ClaudeBin = val
 		case "HISTORY_DIR":

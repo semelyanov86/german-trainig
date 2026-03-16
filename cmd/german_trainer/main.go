@@ -48,7 +48,7 @@ func main() {
 	logger.Printf("Session %s, history: %s", sess.ID, sess.HistoryFile)
 
 	summarizer := summary.New(
-		cfg.ClaudeBin, cfg.HistoryDir,
+		cfg.ClaudeBin, cfg.HistoryDir, cfg.SummarySkillFile,
 		cfg.NotifyWebhookURL, cfg.NotifyWebhookToken,
 		logger,
 	)
@@ -77,7 +77,7 @@ func main() {
 		PolzaTTSModel: cfg.PolzaTTSModel,
 		PolzaTTSVoice: cfg.PolzaTTSVoice,
 	}, logger)
-	claude := llm.NewClaude(cfg.ClaudeBin, cfg.ClaudeModel, cfg.HistoryDir, logger)
+	claude := llm.NewClaude(cfg.ClaudeBin, cfg.ClaudeModel, cfg.HistoryDir, cfg.SkillFile, logger)
 
 	ch.Cmd("ANSWER")
 	if !ch.IsAlive() {

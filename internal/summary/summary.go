@@ -7,20 +7,24 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"german-trainer/internal/skill"
 )
 
 type Summarizer struct {
 	claudeBin    string
 	workDir      string
+	skillFile    string
 	webhookURL   string
 	webhookToken string
 	logger       *log.Logger
 }
 
-func New(claudeBin, workDir, webhookURL, webhookToken string, logger *log.Logger) *Summarizer {
+func New(claudeBin, workDir, skillFile, webhookURL, webhookToken string, logger *log.Logger) *Summarizer {
 	return &Summarizer{
 		claudeBin:    claudeBin,
 		workDir:      workDir,
+		skillFile:    skillFile,
 		webhookURL:   webhookURL,
 		webhookToken: webhookToken,
 		logger:       logger,
@@ -51,7 +55,17 @@ func (s *Summarizer) Run(historyContent string) error {
 func (s *Summarizer) callClaude(history string) (string, error) {
 	prompt := fmt.Sprintf("/german-summary\n\nВот транскрипт разговора:\n\n%s", history)
 
-	cmd := exec.Command(s.claudeBin, "-p", prompt, "--output-format", "text")
+	args := []string{"-p", prompt, "--output-format", "text"}
+	if s.skillFile != "" {
+		raw, err := os.ReadFile(s.skillFile)
+		if err == nil {
+			args = append(args, "--system-prompt", skill.ExtractContent(string(raw)))
+		} else {
+			s.logger.Printf("WARN: cannot read summary skill file %s: %v", s.skillFile, err)
+		}
+	}
+
+	cmd := exec.Command(s.claudeBin, args...)
 	cmd.Dir = s.workDir
 	cmd.Env = append(os.Environ(), "HOME=/root")
 

@@ -6,17 +6,20 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+
+	"german-trainer/internal/skill"
 )
 
 type Claude struct {
-	bin     string
-	model   string
-	workDir string
-	logger  *log.Logger
+	bin       string
+	model     string
+	workDir   string
+	skillFile string
+	logger    *log.Logger
 }
 
-func NewClaude(bin, model, workDir string, logger *log.Logger) *Claude {
-	return &Claude{bin: bin, model: model, workDir: workDir, logger: logger}
+func NewClaude(bin, model, workDir, skillFile string, logger *log.Logger) *Claude {
+	return &Claude{bin: bin, model: model, workDir: workDir, skillFile: skillFile, logger: logger}
 }
 
 func (c *Claude) Call(history, userMessage string) (string, error) {
@@ -27,7 +30,17 @@ func (c *Claude) Call(history, userMessage string) (string, error) {
 		prompt = fmt.Sprintf("/german_tutor_skill\n\n%s", userMessage)
 	}
 
-	cmd := exec.Command(c.bin, "-p", prompt, "--output-format", "text")
+	args := []string{"-p", prompt, "--output-format", "text"}
+	if c.skillFile != "" {
+		raw, err := os.ReadFile(c.skillFile)
+		if err == nil {
+			args = append(args, "--system-prompt", skill.ExtractContent(string(raw)))
+		} else {
+			c.logger.Printf("WARN: cannot read skill file %s: %v", c.skillFile, err)
+		}
+	}
+
+	cmd := exec.Command(c.bin, args...)
 	cmd.Dir = c.workDir
 	cmd.Env = append(os.Environ(), "HOME=/root")
 
