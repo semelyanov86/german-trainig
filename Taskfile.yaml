@@ -9,6 +9,7 @@ tasks:
     desc: Compile Go binary and C wrapper
     cmds:
       - go build -o german_trainer ./cmd/german_trainer
+      - go build -o send_recording ./cmd/send_recording
       - gcc -o german_trainer_wrapper deploy/agi_wrapper.c
     sources:
       - cmd/**/*.go
@@ -16,6 +17,7 @@ tasks:
       - deploy/agi_wrapper.c
     generates:
       - german_trainer
+      - send_recording
       - german_trainer_wrapper
 
   install:
@@ -25,10 +27,12 @@ tasks:
       - mkdir -p {{.ENV_DIR}}
       - test -f {{.ENV_DIR}}/.env || (cp .env.example {{.ENV_DIR}}/.env && echo "Created {{.ENV_DIR}}/.env — edit it with your API keys")
       - cp german_trainer {{.AGI_DIR}}/german_trainer
+      - cp send_recording {{.AGI_DIR}}/send_recording
       - cp german_trainer_wrapper {{.AGI_DIR}}/german_trainer_wrapper
       - chown root:root {{.AGI_DIR}}/german_trainer_wrapper
       - chmod 4755 {{.AGI_DIR}}/german_trainer_wrapper
       - chmod 755 {{.AGI_DIR}}/german_trainer
+      - chmod 755 {{.AGI_DIR}}/send_recording
       - echo "Installed. Reload dialplan{{":"}} asterisk -rx 'dialplan reload'"
 
   reload:
@@ -45,7 +49,7 @@ tasks:
   clean:
     desc: Remove build artifacts
     cmds:
-      - rm -f german_trainer german_trainer_wrapper
+      - rm -f german_trainer send_recording german_trainer_wrapper
 
   logs:
     desc: Tail the AGI log

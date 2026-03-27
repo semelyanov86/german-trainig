@@ -25,6 +25,7 @@ type Config struct {
 	HistoryDir          string
 	NotifyWebhookURL    string
 	NotifyWebhookToken  string
+	WebhookBaseURL      string
 	PolzaAPIKey         string
 	PolzaSTTModel       string
 	PolzaTTSModel       string
@@ -84,6 +85,8 @@ func Load(path string) (*Config, error) {
 			cfg.NotifyWebhookURL = val
 		case "NOTIFY_WEBHOOK_TOKEN":
 			cfg.NotifyWebhookToken = val
+		case "WEBHOOK_URL":
+			cfg.WebhookBaseURL = val
 		case "STT_ENGINE":
 			cfg.STTEngine = val
 		case "POLZA_API_KEY":
