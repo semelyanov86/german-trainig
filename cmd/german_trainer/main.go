@@ -13,6 +13,7 @@ import (
 	"german-trainer/internal/session"
 	"german-trainer/internal/stt"
 	"german-trainer/internal/summary"
+	"german-trainer/internal/theme"
 	"german-trainer/internal/tts"
 )
 
@@ -90,8 +91,18 @@ func main() {
 		return
 	}
 
+	themePrompt := "Starte ein neues Gespräch. Begrüße den Anrufer und schlage ein Thema vor."
+	if cfg.ThemesFile != "" {
+		if t, err := theme.RandomTheme(cfg.ThemesFile); err != nil {
+			logger.Printf("WARN loading theme: %v, using default prompt", err)
+		} else {
+			logger.Printf("Selected theme: %s", t)
+			themePrompt = fmt.Sprintf("Starte ein neues Gespräch. Begrüße den Anrufer kurz und stelle ihm folgende Frage als Gesprächseinstieg: %s", t)
+		}
+	}
+
 	logger.Println("Generating initial greeting...")
-	greeting, err := claude.Call("", "Starte ein neues Gespräch. Begrüße den Anrufer und schlage ein Thema vor.")
+	greeting, err := claude.Call("", themePrompt)
 	if err != nil {
 		logger.Printf("ERROR initial claude call: %v", err)
 		ch.Cmd("EXEC StopMusicOnHold")

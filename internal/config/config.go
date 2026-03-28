@@ -8,28 +8,29 @@ import (
 )
 
 type Config struct {
-	GroqAPIKey          string
-	ElevenAPIKey        string
-	ElevenVoiceID       string
-	ElevenModel         string
-	OpenAIAPIKey        string
-	OpenAIModel         string
-	OpenAIVoice         string
-	TTSEngine           string
-	STTEngine           string
-	ClaudeModel         string
-	PiperModel          string
+	GroqAPIKey         string
+	ElevenAPIKey       string
+	ElevenVoiceID      string
+	ElevenModel        string
+	OpenAIAPIKey       string
+	OpenAIModel        string
+	OpenAIVoice        string
+	TTSEngine          string
+	STTEngine          string
+	ClaudeModel        string
+	PiperModel         string
 	SkillFile          string
 	SummarySkillFile   string
 	ClaudeBin          string
-	HistoryDir          string
-	NotifyWebhookURL    string
-	NotifyWebhookToken  string
-	WebhookBaseURL      string
-	PolzaAPIKey         string
-	PolzaSTTModel       string
-	PolzaTTSModel       string
-	PolzaTTSVoice       string
+	HistoryDir         string
+	NotifyWebhookURL   string
+	NotifyWebhookToken string
+	WebhookBaseURL     string
+	PolzaAPIKey        string
+	PolzaSTTModel      string
+	PolzaTTSModel      string
+	PolzaTTSVoice      string
+	ThemesFile         string
 }
 
 func Load(path string) (*Config, error) {
@@ -97,6 +98,8 @@ func Load(path string) (*Config, error) {
 			cfg.PolzaTTSModel = val
 		case "POLZA_TTS_VOICE":
 			cfg.PolzaTTSVoice = val
+		case "THEMES_FILE":
+			cfg.ThemesFile = val
 		}
 	}
 	return cfg, sc.Err()
