@@ -4,27 +4,23 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/exec"
 	"strings"
 
-	"german-trainer/internal/skill"
+	"german-trainer/internal/llm"
 )
 
 type Summarizer struct {
-	claudeBin    string
-	workDir      string
-	skillFile    string
+	provider     llm.Provider
+	systemPrompt string
 	webhookURL   string
 	webhookToken string
 	logger       *log.Logger
 }
 
-func New(claudeBin, workDir, skillFile, webhookURL, webhookToken string, logger *log.Logger) *Summarizer {
+func New(provider llm.Provider, systemPrompt, webhookURL, webhookToken string, logger *log.Logger) *Summarizer {
 	return &Summarizer{
-		claudeBin:    claudeBin,
-		workDir:      workDir,
-		skillFile:    skillFile,
+		provider:     provider,
+		systemPrompt: systemPrompt,
 		webhookURL:   webhookURL,
 		webhookToken: webhookToken,
 		logger:       logger,
@@ -38,9 +34,9 @@ func (s *Summarizer) Run(historyContent string) error {
 	}
 
 	s.logger.Println("Summary: generating post-call analysis...")
-	report, err := s.callClaude(historyContent)
+	report, err := s.generate(historyContent)
 	if err != nil {
-		return fmt.Errorf("claude summary call: %w", err)
+		return fmt.Errorf("summary generation: %w", err)
 	}
 	s.logger.Printf("Summary: generated %d chars", len(report))
 
@@ -52,31 +48,13 @@ func (s *Summarizer) Run(historyContent string) error {
 	return s.sendWebhook(report)
 }
 
-func (s *Summarizer) callClaude(history string) (string, error) {
-	prompt := fmt.Sprintf("/german-summary\n\nВот транскрипт разговора:\n\n%s", history)
-
-	args := []string{"-p", prompt, "--output-format", "text"}
-	if s.skillFile != "" {
-		raw, err := os.ReadFile(s.skillFile)
-		if err == nil {
-			args = append(args, "--system-prompt", skill.ExtractContent(string(raw)))
-		} else {
-			s.logger.Printf("WARN: cannot read summary skill file %s: %v", s.skillFile, err)
-		}
-	}
-
-	cmd := exec.Command(s.claudeBin, args...)
-	cmd.Dir = s.workDir
-	cmd.Env = append(os.Environ(), "HOME=/root")
-
-	output, err := cmd.Output()
+func (s *Summarizer) generate(history string) (string, error) {
+	user := fmt.Sprintf("Вот транскрипт разговора:\n\n%s", history)
+	report, err := s.provider.Complete(s.systemPrompt, []llm.Message{{Role: llm.RoleUser, Content: user}})
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			s.logger.Printf("claude summary stderr: %s", string(exitErr.Stderr))
-		}
-		return "", fmt.Errorf("claude error: %w", err)
+		return "", err
 	}
-	return stripMarkdown(strings.TrimSpace(string(output))), nil
+	return stripMarkdown(strings.TrimSpace(report)), nil
 }
 
 func stripMarkdown(s string) string {

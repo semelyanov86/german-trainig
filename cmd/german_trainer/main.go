@@ -11,6 +11,7 @@ import (
 	"german-trainer/internal/farewell"
 	"german-trainer/internal/llm"
 	"german-trainer/internal/session"
+	"german-trainer/internal/skill"
 	"german-trainer/internal/stt"
 	"german-trainer/internal/summary"
 	"german-trainer/internal/theme"
@@ -47,9 +48,26 @@ func main() {
 
 	sess := session.New(cfg.HistoryDir, logger)
 	logger.Printf("Session %s, history: %s", sess.ID, sess.HistoryFile)
+	logger.Printf("LLM engine=%s dialog=%s summary=%s", cfg.LLMEngine, cfg.LLMModel, cfg.LLMSummaryModel)
 
+	// System prompts are loaded from files shipped with the app (not from
+	// server-side Claude skills), with YAML frontmatter stripped.
+	tutorPrompt := loadPrompt(cfg.SkillFile, logger)
+	summaryPrompt := loadPrompt(cfg.SummarySkillFile, logger)
+
+	summaryProvider := llm.New(llm.Spec{
+		Engine:      cfg.LLMEngine,
+		Model:       cfg.LLMSummaryModel,
+		ClaudeModel: cfg.ClaudeModel,
+		Temperature: cfg.LLMSummaryTemperature,
+		Reasoning:   cfg.LLMSummaryReasoning,
+		MaxTokens:   cfg.LLMSummaryMaxTokens,
+		PolzaAPIKey: cfg.PolzaAPIKey,
+		ClaudeBin:   cfg.ClaudeBin,
+		WorkDir:     cfg.HistoryDir,
+	}, logger)
 	summarizer := summary.New(
-		cfg.ClaudeBin, cfg.HistoryDir, cfg.SummarySkillFile,
+		summaryProvider, summaryPrompt,
 		cfg.NotifyWebhookURL, cfg.NotifyWebhookToken,
 		logger,
 	)
@@ -78,7 +96,18 @@ func main() {
 		PolzaTTSModel: cfg.PolzaTTSModel,
 		PolzaTTSVoice: cfg.PolzaTTSVoice,
 	}, logger)
-	claude := llm.NewClaude(cfg.ClaudeBin, cfg.ClaudeModel, cfg.HistoryDir, cfg.SkillFile, logger)
+	dialogProvider := llm.New(llm.Spec{
+		Engine:      cfg.LLMEngine,
+		Model:       cfg.LLMModel,
+		ClaudeModel: cfg.ClaudeModel,
+		Temperature: cfg.LLMDialogTemperature,
+		Reasoning:   cfg.LLMDialogReasoning,
+		MaxTokens:   cfg.LLMDialogMaxTokens,
+		PolzaAPIKey: cfg.PolzaAPIKey,
+		ClaudeBin:   cfg.ClaudeBin,
+		WorkDir:     cfg.HistoryDir,
+	}, logger)
+	dialog := llm.NewConversation(dialogProvider, tutorPrompt)
 
 	ch.Cmd("ANSWER")
 	if !ch.IsAlive() {
@@ -102,9 +131,9 @@ func main() {
 	}
 
 	logger.Println("Generating initial greeting...")
-	greeting, err := claude.Call("", themePrompt)
+	greeting, err := dialog.Call("", themePrompt)
 	if err != nil {
-		logger.Printf("ERROR initial claude call: %v", err)
+		logger.Printf("ERROR initial LLM call: %v", err)
 		ch.Cmd("EXEC StopMusicOnHold")
 		return
 	}
@@ -150,7 +179,7 @@ func main() {
 		userText = strings.TrimSpace(userText)
 		if userText == "" {
 			logger.Println("Empty transcription, skipping")
-			nudge, _ := claude.Call(sess.ReadHistory(), "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen.")
+			nudge, _ := dialog.Call(sess.ReadHistory(), "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen.")
 			if nudge != "" {
 				sess.WriteHistory("Tutor", nudge)
 				playTTS(ch, sess, synthesizer, nudge, logger)
@@ -165,7 +194,7 @@ func main() {
 		if farewell.IsFarewell(userText) {
 			logger.Println("Farewell detected")
 			sess.WriteHistory("User", userText)
-			fw, _ := claude.Call(sess.ReadHistory(), userText)
+			fw, _ := dialog.Call(sess.ReadHistory(), userText)
 			if fw == "" {
 				fw = "Tschüss! Bis zum nächsten Mal!"
 			}
@@ -182,13 +211,13 @@ func main() {
 		}
 
 		history := sess.ReadHistory()
-		response, err := claude.Call(history, userText)
+		response, err := dialog.Call(history, userText)
 		if err != nil {
 			logger.Printf("ERROR calling claude: %v", err)
 			ch.Cmd("EXEC StopMusicOnHold")
 			continue
 		}
-		logger.Printf("Claude: %s", response)
+		logger.Printf("Tutor: %s", response)
 
 		ch.Cmd("EXEC StopMusicOnHold")
 		if !ch.IsAlive() {
@@ -205,6 +234,20 @@ func main() {
 	if ch.IsAlive() {
 		ch.Cmd("HANGUP")
 	}
+}
+
+// loadPrompt reads a system-prompt file and strips its YAML frontmatter.
+func loadPrompt(path string, logger *log.Logger) string {
+	if path == "" {
+		logger.Println("WARN: prompt file path is empty")
+		return ""
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		logger.Printf("WARN: cannot read prompt file %s: %v", path, err)
+		return ""
+	}
+	return skill.ExtractContent(string(raw))
 }
 
 func playTTS(ch *agi.Channel, sess *session.Session, synth tts.Synthesizer, text string, logger *log.Logger) bool {

@@ -6,38 +6,37 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-
-	"german-trainer/internal/skill"
 )
 
-type Claude struct {
-	bin       string
-	model     string
-	workDir   string
-	skillFile string
-	logger    *log.Logger
+// claudeProvider runs the Claude Code CLI as a subprocess. Kept as a
+// switchable fallback backend. The system prompt is supplied by the
+// application (via --system-prompt) rather than a server-side skill.
+type claudeProvider struct {
+	bin     string
+	model   string
+	workDir string
+	logger  *log.Logger
 }
 
-func NewClaude(bin, model, workDir, skillFile string, logger *log.Logger) *Claude {
-	return &Claude{bin: bin, model: model, workDir: workDir, skillFile: skillFile, logger: logger}
+func newClaude(s Spec, logger *log.Logger) *claudeProvider {
+	return &claudeProvider{bin: s.ClaudeBin, model: s.ClaudeModel, workDir: s.WorkDir, logger: logger}
 }
 
-func (c *Claude) Call(history, userMessage string) (string, error) {
-	var prompt string
-	if history != "" {
-		prompt = fmt.Sprintf("/german_tutor_skill\n\nGesprächsverlauf:\n%s\n\nLetzte Nachricht des Nutzers: %s\n\nAntworte nur auf die letzte Nachricht.", history, userMessage)
-	} else {
-		prompt = fmt.Sprintf("/german_tutor_skill\n\n%s", userMessage)
+func (c *claudeProvider) Complete(system string, messages []Message) (string, error) {
+	var b strings.Builder
+	for i, m := range messages {
+		if i > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(m.Content)
 	}
 
-	args := []string{"-p", prompt, "--output-format", "text"}
-	if c.skillFile != "" {
-		raw, err := os.ReadFile(c.skillFile)
-		if err == nil {
-			args = append(args, "--system-prompt", skill.ExtractContent(string(raw)))
-		} else {
-			c.logger.Printf("WARN: cannot read skill file %s: %v", c.skillFile, err)
-		}
+	args := []string{"-p", b.String(), "--output-format", "text"}
+	if system != "" {
+		args = append(args, "--system-prompt", system)
+	}
+	if c.model != "" {
+		args = append(args, "--model", c.model)
 	}
 
 	cmd := exec.Command(c.bin, args...)

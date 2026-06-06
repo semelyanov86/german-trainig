@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -31,6 +32,17 @@ type Config struct {
 	PolzaTTSModel      string
 	PolzaTTSVoice      string
 	ThemesFile         string
+
+	// LLM provider selection and per-task model settings.
+	LLMEngine             string // "polza" (default) or "claude"
+	LLMModel              string // dialog model id
+	LLMSummaryModel       string // post-call summary model id
+	LLMDialogTemperature  string // optional; omit for models that reject it
+	LLMDialogReasoning    string // optional reasoning effort (reasoning models only)
+	LLMDialogMaxTokens    int
+	LLMSummaryTemperature string
+	LLMSummaryReasoning   string
+	LLMSummaryMaxTokens   int
 }
 
 func Load(path string) (*Config, error) {
@@ -100,7 +112,39 @@ func Load(path string) (*Config, error) {
 			cfg.PolzaTTSVoice = val
 		case "THEMES_FILE":
 			cfg.ThemesFile = val
+		case "LLM_ENGINE":
+			cfg.LLMEngine = val
+		case "LLM_MODEL":
+			cfg.LLMModel = val
+		case "LLM_SUMMARY_MODEL":
+			cfg.LLMSummaryModel = val
+		case "LLM_DIALOG_TEMPERATURE":
+			cfg.LLMDialogTemperature = val
+		case "LLM_DIALOG_REASONING":
+			cfg.LLMDialogReasoning = val
+		case "LLM_DIALOG_MAX_TOKENS":
+			cfg.LLMDialogMaxTokens, _ = strconv.Atoi(val)
+		case "LLM_SUMMARY_TEMPERATURE":
+			cfg.LLMSummaryTemperature = val
+		case "LLM_SUMMARY_REASONING":
+			cfg.LLMSummaryReasoning = val
+		case "LLM_SUMMARY_MAX_TOKENS":
+			cfg.LLMSummaryMaxTokens, _ = strconv.Atoi(val)
 		}
 	}
-	return cfg, sc.Err()
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+
+	// Defaults so the app runs with a minimal .env.
+	if cfg.LLMEngine == "" {
+		cfg.LLMEngine = "polza"
+	}
+	if cfg.LLMModel == "" {
+		cfg.LLMModel = "openai/gpt-5.4-mini"
+	}
+	if cfg.LLMSummaryModel == "" {
+		cfg.LLMSummaryModel = "google/gemini-3.5-flash"
+	}
+	return cfg, nil
 }

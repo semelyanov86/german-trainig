@@ -26,6 +26,8 @@ tasks:
     cmds:
       - mkdir -p {{.ENV_DIR}}
       - test -f {{.ENV_DIR}}/.env || (cp .env.example {{.ENV_DIR}}/.env && echo "Created {{.ENV_DIR}}/.env — edit it with your API keys")
+      - cp SKILL.md {{.ENV_DIR}}/SKILL.md
+      - cp summary_skill.md {{.ENV_DIR}}/summary_skill.md
       - cp german_trainer {{.AGI_DIR}}/german_trainer
       - cp send_recording {{.AGI_DIR}}/send_recording
       - cp german_trainer_wrapper {{.AGI_DIR}}/german_trainer_wrapper
