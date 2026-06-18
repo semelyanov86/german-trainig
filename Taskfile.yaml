@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  AGI_DIR: /usr/local/var/lib/asterisk/agi-bin
+  AGI_DIR: /usr/share/asterisk/agi-bin
   ENV_DIR: /etc/german-trainer
 
 tasks:

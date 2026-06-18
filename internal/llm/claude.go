@@ -3,7 +3,6 @@ package llm
 import (
 	"fmt"
 	"log"
-	"os"
 	"os/exec"
 	"strings"
 )
@@ -39,15 +38,17 @@ func (c *claudeProvider) Complete(system string, messages []Message) (string, er
 		args = append(args, "--model", c.model)
 	}
 
-	cmd := exec.Command(c.bin, args...)
-	cmd.Dir = c.workDir
-	cmd.Env = append(os.Environ(), "HOME=/root")
+	// The AGI process runs as the asterisk user, which cannot read sergey's
+	// Claude subscription credentials (~/.claude). Run the claude CLI as sergey
+	// via sudo (-H sets HOME to sergey's home so the CLI finds its login).
+	// A narrow rule in /etc/sudoers.d/german-trainer permits this NOPASSWD.
+	sudoArgs := append([]string{"-n", "-u", "sergey", "-H", c.bin}, args...)
+	cmd := exec.Command("sudo", sudoArgs...)
+	cmd.Dir = "/tmp" // sergey-readable cwd; HISTORY_DIR is asterisk-only
 
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			c.logger.Printf("claude stderr: %s", string(exitErr.Stderr))
-		}
+		c.logger.Printf("claude output: %s", strings.TrimSpace(string(output)))
 		return "", fmt.Errorf("claude error: %w", err)
 	}
 	return strings.TrimSpace(string(output)), nil

@@ -1,4 +1,5 @@
 .env
 /german_trainer
 /german_trainer_wrapper
+/send_recording
 .task/
