@@ -171,15 +171,25 @@ func main() {
 			continue
 		}
 
+		// Start "thinking" music the moment the user stops talking. It masks
+		// the latency of STT + LLM and is stopped only once we have the
+		// tutor's reply, right before TTS playback.
+		ch.Cmd("EXEC StartMusicOnHold default")
+		if !ch.IsAlive() {
+			break
+		}
+
 		userText, err := transcriber.Transcribe(wavPath)
 		if err != nil {
 			logger.Printf("ERROR transcribing: %v", err)
+			ch.Cmd("EXEC StopMusicOnHold")
 			continue
 		}
 		userText = strings.TrimSpace(userText)
 		if userText == "" {
 			logger.Println("Empty transcription, skipping")
 			nudge, _ := dialog.Call(sess.ReadHistory(), "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen.")
+			ch.Cmd("EXEC StopMusicOnHold")
 			if nudge != "" {
 				sess.WriteHistory("Tutor", nudge)
 				playTTS(ch, sess, synthesizer, nudge, logger)
@@ -195,6 +205,7 @@ func main() {
 			logger.Println("Farewell detected")
 			sess.WriteHistory("User", userText)
 			fw, _ := dialog.Call(sess.ReadHistory(), userText)
+			ch.Cmd("EXEC StopMusicOnHold")
 			if fw == "" {
 				fw = "Tschüss! Bis zum nächsten Mal!"
 			}
@@ -204,11 +215,6 @@ func main() {
 		}
 
 		sess.WriteHistory("User", userText)
-
-		ch.Cmd("EXEC StartMusicOnHold default")
-		if !ch.IsAlive() {
-			break
-		}
 
 		history := sess.ReadHistory()
 		response, err := dialog.Call(history, userText)
