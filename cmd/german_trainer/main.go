@@ -20,7 +20,7 @@ import (
 
 const (
 	maxTurns    = 25
-	maxRecordMs = 60000
+	maxRecordMs = 150000
 	silenceSec  = 3
 	logFile     = "/tmp/german_trainer.log"
 	envFile     = "/etc/german-trainer/.env"
