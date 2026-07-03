@@ -24,6 +24,10 @@ const (
 	silenceSec  = 3
 	logFile     = "/tmp/german_trainer.log"
 	envFile     = "/etc/german-trainer/.env"
+	// Dedicated Asterisk MOH class for the "thinking" pause. It holds a pool of
+	// AI-generated calm instrumental tracks with sort=random, so each hold plays
+	// different music. Scoped to this app — the global "default" class is untouched.
+	mohClass = "german-thinking"
 )
 
 func main() {
@@ -115,7 +119,7 @@ func main() {
 	}
 
 	// Play music while generating greeting
-	ch.Cmd("EXEC StartMusicOnHold default")
+	ch.Cmd("EXEC StartMusicOnHold " + mohClass)
 	if !ch.IsAlive() {
 		return
 	}
@@ -174,7 +178,7 @@ func main() {
 		// Start "thinking" music the moment the user stops talking. It masks
 		// the latency of STT + LLM and is stopped only once we have the
 		// tutor's reply, right before TTS playback.
-		ch.Cmd("EXEC StartMusicOnHold default")
+		ch.Cmd("EXEC StartMusicOnHold " + mohClass)
 		if !ch.IsAlive() {
 			break
 		}
