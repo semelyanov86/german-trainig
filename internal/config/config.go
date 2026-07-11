@@ -31,6 +31,10 @@ type Config struct {
 	PolzaSTTModel      string
 	PolzaTTSModel      string
 	PolzaTTSVoice      string
+	OpenRouterAPIKey   string
+	OpenRouterSTTModel string
+	OpenRouterTTSModel string
+	OpenRouterTTSVoice string
 	ThemesFile         string
 
 	// LLM provider selection and per-task model settings.
@@ -110,6 +114,14 @@ func Load(path string) (*Config, error) {
 			cfg.PolzaTTSModel = val
 		case "POLZA_TTS_VOICE":
 			cfg.PolzaTTSVoice = val
+		case "OPENROUTER_API_KEY":
+			cfg.OpenRouterAPIKey = val
+		case "OPENROUTER_STT_MODEL":
+			cfg.OpenRouterSTTModel = val
+		case "OPENROUTER_TTS_MODEL":
+			cfg.OpenRouterTTSModel = val
+		case "OPENROUTER_TTS_VOICE":
+			cfg.OpenRouterTTSVoice = val
 		case "THEMES_FILE":
 			cfg.ThemesFile = val
 		case "LLM_ENGINE":

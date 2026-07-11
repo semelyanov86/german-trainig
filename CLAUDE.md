@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Asterisk AGI application for practicing spoken German through phone calls. Written in Go (1.18+, no external dependencies). The call flow is: User calls -> Asterisk AGI -> STT (Groq Whisper / polza) -> LLM (polza.ai by default, Claude CLI as fallback) -> TTS (polza / OpenAI / ElevenLabs / Piper) -> audio back to user. After each call, a post-call summary is generated in Russian and sent via webhook.
+Asterisk AGI application for practicing spoken German through phone calls. Written in Go (1.18+, no external dependencies). The call flow is: User calls -> Asterisk AGI -> STT (Groq Whisper / polza / openrouter) -> LLM (polza.ai by default, Claude CLI as fallback) -> TTS (polza / openrouter / OpenAI / ElevenLabs / Piper) -> audio back to user. After each call, a post-call summary is generated in Russian and sent via webhook.
 
 ## Build & Deploy Commands
 
@@ -30,9 +30,9 @@ There are no tests in this project.
 **Internal packages (all under `internal/`):**
 - `agi/` — Asterisk AGI protocol (reads vars, sends commands, plays audio via stdin/stdout)
 - `config/` — Custom .env parser (reads from `/etc/german-trainer/.env`, not env vars)
-- `stt/` — Speech-to-text. `Transcriber` interface; factory in `stt.go` selects Groq Whisper or polza by `STT_ENGINE`
+- `stt/` — Speech-to-text. `Transcriber` interface; factory in `stt.go` selects Groq Whisper, polza, or openrouter by `STT_ENGINE`
 - `llm/` — `Provider` interface (`Complete(system, messages)`); factory in `llm.go` selects the polza HTTP backend (`polza.go`, OpenAI-compatible chat completions) or the Claude CLI backend (`claude.go`), chosen by `LLM_ENGINE`. `Conversation` wraps a provider with the tutor system prompt. A separate provider instance is built per task so dialog and summary can use different models
-- `tts/` — `Synthesizer` interface with four backends: polza, OpenAI, ElevenLabs, Piper (local). Factory in `tts.go`, selected by `TTS_ENGINE` config
+- `tts/` — `Synthesizer` interface with five backends: polza, openrouter, OpenAI, ElevenLabs, Piper (local). Factory in `tts.go`, selected by `TTS_ENGINE` config. The openrouter backend accepts both JSON (`{"audio":…}`) and raw-bytes responses
 - `session/` — Per-call session: generates nano-timestamp ID, manages history file and temp file cleanup
 - `skill/` — Strips YAML frontmatter from prompt markdown files
 - `farewell/` — Detects goodbye phrases to end conversation

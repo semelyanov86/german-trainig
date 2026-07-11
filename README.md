@@ -22,12 +22,18 @@ cmd/german_trainer/main.go    — entrypoint, conversation loop
 internal/
   config/config.go            — .env loader
   agi/channel.go              — Asterisk AGI protocol
-  stt/groq.go                 — Speech-to-Text via Groq Whisper API
+  stt/
+    stt.go                    — STT interface and factory
+    groq.go                   — Speech-to-Text via Groq Whisper API
+    polza.go                  — Speech-to-Text via polza.ai
+    openrouter.go             — Speech-to-Text via openrouter.ai
   tts/
     tts.go                    — TTS interface and factory
     openai.go                 — OpenAI cloud TTS
     elevenlabs.go             — ElevenLabs cloud TTS
     piper.go                  — Piper local TTS
+    polza.go                  — polza.ai cloud TTS
+    openrouter.go             — openrouter.ai cloud TTS
   llm/claude.go               — LLM via Claude CLI
   session/session.go          — call session, history, cleanup
   skill/skill.go              — skill file frontmatter parser
@@ -125,6 +131,16 @@ Dial `555` from a SIP phone connected to Asterisk. Music plays while the AI gene
 | `task clean` | Remove build artifacts |
 | `task reload` | Reload Asterisk dialplan |
 
+## Switching STT engine
+
+Edit `STT_ENGINE` in `/etc/german-trainer/.env`:
+
+| Value | Engine | Notes |
+|---|---|---|
+| `groq` | Groq Whisper | `whisper-large-v3`. Requires `GROQ_API_KEY` |
+| `polza` | polza.ai | OpenAI-compatible. Model via `POLZA_STT_MODEL`, key `POLZA_API_KEY` |
+| `openrouter` | openrouter.ai | OpenAI-compatible. Model via `OPENROUTER_STT_MODEL`, key `OPENROUTER_API_KEY` |
+
 ## Switching TTS engine
 
 Edit `TTS_ENGINE` in `/etc/german-trainer/.env`:
@@ -134,6 +150,8 @@ Edit `TTS_ENGINE` in `/etc/german-trainer/.env`:
 | `openai` | OpenAI TTS | Voices: `nova` (female), `alloy`, `shimmer`, `echo` (male), `fable`, `onyx` (male, deep). Models: `tts-1` (fast), `tts-1-hd` (quality) |
 | `elevenlabs` | ElevenLabs | Realistic voices. Free tier: 10 min/month |
 | `piper` | Piper (local) | Free, no API needed, runs offline. Requires piper-tts + voice model |
+| `polza` | polza.ai | OpenAI-compatible. Model via `POLZA_TTS_MODEL`, voice `POLZA_TTS_VOICE`, key `POLZA_API_KEY` |
+| `openrouter` | openrouter.ai | OpenAI-compatible. Model via `OPENROUTER_TTS_MODEL`, voice `OPENROUTER_TTS_VOICE`, key `OPENROUTER_API_KEY` |
 
 Example — switch to OpenAI with a different voice:
 ```bash
@@ -152,6 +170,13 @@ TTS_ENGINE=elevenlabs
 Example — switch to local Piper:
 ```bash
 TTS_ENGINE=piper
+```
+
+Example — switch STT and TTS to OpenRouter:
+```bash
+STT_ENGINE=openrouter
+TTS_ENGINE=openrouter
+OPENROUTER_API_KEY=sk-or-...
 ```
 
 ## How it works

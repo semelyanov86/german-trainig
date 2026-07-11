@@ -83,22 +83,27 @@ func main() {
 	}()
 
 	transcriber := stt.New(cfg.STTEngine, stt.Config{
-		GroqAPIKey:    cfg.GroqAPIKey,
-		PolzaAPIKey:   cfg.PolzaAPIKey,
-		PolzaSTTModel: cfg.PolzaSTTModel,
+		GroqAPIKey:         cfg.GroqAPIKey,
+		PolzaAPIKey:        cfg.PolzaAPIKey,
+		PolzaSTTModel:      cfg.PolzaSTTModel,
+		OpenRouterAPIKey:   cfg.OpenRouterAPIKey,
+		OpenRouterSTTModel: cfg.OpenRouterSTTModel,
 	}, logger)
 	synthesizer := tts.New(cfg.TTSEngine, tts.Config{
-		SessionID:     sess.ID,
-		ElevenAPIKey:  cfg.ElevenAPIKey,
-		ElevenVoiceID: cfg.ElevenVoiceID,
-		ElevenModel:   cfg.ElevenModel,
-		OpenAIAPIKey:  cfg.OpenAIAPIKey,
-		OpenAIModel:   cfg.OpenAIModel,
-		OpenAIVoice:   cfg.OpenAIVoice,
-		PiperModel:    cfg.PiperModel,
-		PolzaAPIKey:   cfg.PolzaAPIKey,
-		PolzaTTSModel: cfg.PolzaTTSModel,
-		PolzaTTSVoice: cfg.PolzaTTSVoice,
+		SessionID:          sess.ID,
+		ElevenAPIKey:       cfg.ElevenAPIKey,
+		ElevenVoiceID:      cfg.ElevenVoiceID,
+		ElevenModel:        cfg.ElevenModel,
+		OpenAIAPIKey:       cfg.OpenAIAPIKey,
+		OpenAIModel:        cfg.OpenAIModel,
+		OpenAIVoice:        cfg.OpenAIVoice,
+		PiperModel:         cfg.PiperModel,
+		PolzaAPIKey:        cfg.PolzaAPIKey,
+		PolzaTTSModel:      cfg.PolzaTTSModel,
+		PolzaTTSVoice:      cfg.PolzaTTSVoice,
+		OpenRouterAPIKey:   cfg.OpenRouterAPIKey,
+		OpenRouterTTSModel: cfg.OpenRouterTTSModel,
+		OpenRouterTTSVoice: cfg.OpenRouterTTSVoice,
 	}, logger)
 	dialogProvider := llm.New(llm.Spec{
 		Engine:      cfg.LLMEngine,

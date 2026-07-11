@@ -7,17 +7,20 @@ type Synthesizer interface {
 }
 
 type Config struct {
-	SessionID     string
-	ElevenAPIKey  string
-	ElevenVoiceID string
-	ElevenModel   string
-	OpenAIAPIKey  string
-	OpenAIModel   string
-	OpenAIVoice   string
-	PiperModel    string
-	PolzaAPIKey   string
-	PolzaTTSModel string
-	PolzaTTSVoice string
+	SessionID          string
+	ElevenAPIKey       string
+	ElevenVoiceID      string
+	ElevenModel        string
+	OpenAIAPIKey       string
+	OpenAIModel        string
+	OpenAIVoice        string
+	PiperModel         string
+	PolzaAPIKey        string
+	PolzaTTSModel      string
+	PolzaTTSVoice      string
+	OpenRouterAPIKey   string
+	OpenRouterTTSModel string
+	OpenRouterTTSVoice string
 }
 
 func New(engine string, cfg Config, logger *log.Logger) Synthesizer {
@@ -28,6 +31,8 @@ func New(engine string, cfg Config, logger *log.Logger) Synthesizer {
 		return &OpenAISynth{cfg: cfg, logger: logger}
 	case "polza":
 		return &PolzaSynth{cfg: cfg, logger: logger}
+	case "openrouter":
+		return &OpenRouterSynth{cfg: cfg, logger: logger}
 	default:
 		return &PiperSynth{cfg: cfg, logger: logger}
 	}
