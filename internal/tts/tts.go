@@ -7,20 +7,21 @@ type Synthesizer interface {
 }
 
 type Config struct {
-	SessionID          string
-	ElevenAPIKey       string
-	ElevenVoiceID      string
-	ElevenModel        string
-	OpenAIAPIKey       string
-	OpenAIModel        string
-	OpenAIVoice        string
-	PiperModel         string
-	PolzaAPIKey        string
-	PolzaTTSModel      string
-	PolzaTTSVoice      string
-	OpenRouterAPIKey   string
-	OpenRouterTTSModel string
-	OpenRouterTTSVoice string
+	SessionID           string
+	ElevenAPIKey        string
+	ElevenVoiceID       string
+	ElevenModel         string
+	OpenAIAPIKey        string
+	OpenAIModel         string
+	OpenAIVoice         string
+	PiperModel          string
+	PolzaAPIKey         string
+	PolzaTTSModel       string
+	PolzaTTSVoice       string
+	OpenRouterAPIKey    string
+	OpenRouterTTSModel  string
+	OpenRouterTTSVoice  string
+	OpenRouterTTSFormat string
 }
 
 func New(engine string, cfg Config, logger *log.Logger) Synthesizer {

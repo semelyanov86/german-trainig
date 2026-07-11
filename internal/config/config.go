@@ -9,33 +9,34 @@ import (
 )
 
 type Config struct {
-	GroqAPIKey         string
-	ElevenAPIKey       string
-	ElevenVoiceID      string
-	ElevenModel        string
-	OpenAIAPIKey       string
-	OpenAIModel        string
-	OpenAIVoice        string
-	TTSEngine          string
-	STTEngine          string
-	ClaudeModel        string
-	PiperModel         string
-	SkillFile          string
-	SummarySkillFile   string
-	ClaudeBin          string
-	HistoryDir         string
-	NotifyWebhookURL   string
-	NotifyWebhookToken string
-	WebhookBaseURL     string
-	PolzaAPIKey        string
-	PolzaSTTModel      string
-	PolzaTTSModel      string
-	PolzaTTSVoice      string
-	OpenRouterAPIKey   string
-	OpenRouterSTTModel string
-	OpenRouterTTSModel string
-	OpenRouterTTSVoice string
-	ThemesFile         string
+	GroqAPIKey          string
+	ElevenAPIKey        string
+	ElevenVoiceID       string
+	ElevenModel         string
+	OpenAIAPIKey        string
+	OpenAIModel         string
+	OpenAIVoice         string
+	TTSEngine           string
+	STTEngine           string
+	ClaudeModel         string
+	PiperModel          string
+	SkillFile           string
+	SummarySkillFile    string
+	ClaudeBin           string
+	HistoryDir          string
+	NotifyWebhookURL    string
+	NotifyWebhookToken  string
+	WebhookBaseURL      string
+	PolzaAPIKey         string
+	PolzaSTTModel       string
+	PolzaTTSModel       string
+	PolzaTTSVoice       string
+	OpenRouterAPIKey    string
+	OpenRouterSTTModel  string
+	OpenRouterTTSModel  string
+	OpenRouterTTSVoice  string
+	OpenRouterTTSFormat string
+	ThemesFile          string
 
 	// LLM provider selection and per-task model settings.
 	LLMEngine             string // "polza" (default) or "claude"
@@ -122,6 +123,8 @@ func Load(path string) (*Config, error) {
 			cfg.OpenRouterTTSModel = val
 		case "OPENROUTER_TTS_VOICE":
 			cfg.OpenRouterTTSVoice = val
+		case "OPENROUTER_TTS_FORMAT":
+			cfg.OpenRouterTTSFormat = val
 		case "THEMES_FILE":
 			cfg.ThemesFile = val
 		case "LLM_ENGINE":
