@@ -60,15 +60,18 @@ func main() {
 	summaryPrompt := loadPrompt(cfg.SummarySkillFile, logger)
 
 	summaryProvider := llm.New(llm.Spec{
-		Engine:      cfg.LLMEngine,
-		Model:       cfg.LLMSummaryModel,
-		ClaudeModel: cfg.ClaudeModel,
-		Temperature: cfg.LLMSummaryTemperature,
-		Reasoning:   cfg.LLMSummaryReasoning,
-		MaxTokens:   cfg.LLMSummaryMaxTokens,
-		PolzaAPIKey: cfg.PolzaAPIKey,
-		ClaudeBin:   cfg.ClaudeBin,
-		WorkDir:     cfg.HistoryDir,
+		Engine:                  cfg.LLMEngine,
+		Model:                   cfg.LLMSummaryModel,
+		ClaudeModel:             cfg.ClaudeModel,
+		Temperature:             cfg.LLMSummaryTemperature,
+		Reasoning:               cfg.LLMSummaryReasoning,
+		MaxTokens:               cfg.LLMSummaryMaxTokens,
+		PolzaAPIKey:             cfg.PolzaAPIKey,
+		ClaudeBin:               cfg.ClaudeBin,
+		WorkDir:                 cfg.HistoryDir,
+		ClaudeMaxOutputTokens:   cfg.ClaudeMaxOutputTokens,
+		ClaudeMaxThinkingTokens: cfg.ClaudeMaxThinkingTokens,
+		ClaudeEffort:            cfg.ClaudeEffort,
 	}, logger)
 	summarizer := summary.New(
 		summaryProvider, summaryPrompt,
@@ -107,15 +110,18 @@ func main() {
 		OpenRouterTTSFormat: cfg.OpenRouterTTSFormat,
 	}, logger)
 	dialogProvider := llm.New(llm.Spec{
-		Engine:      cfg.LLMEngine,
-		Model:       cfg.LLMModel,
-		ClaudeModel: cfg.ClaudeModel,
-		Temperature: cfg.LLMDialogTemperature,
-		Reasoning:   cfg.LLMDialogReasoning,
-		MaxTokens:   cfg.LLMDialogMaxTokens,
-		PolzaAPIKey: cfg.PolzaAPIKey,
-		ClaudeBin:   cfg.ClaudeBin,
-		WorkDir:     cfg.HistoryDir,
+		Engine:                  cfg.LLMEngine,
+		Model:                   cfg.LLMModel,
+		ClaudeModel:             cfg.ClaudeModel,
+		Temperature:             cfg.LLMDialogTemperature,
+		Reasoning:               cfg.LLMDialogReasoning,
+		MaxTokens:               cfg.LLMDialogMaxTokens,
+		PolzaAPIKey:             cfg.PolzaAPIKey,
+		ClaudeBin:               cfg.ClaudeBin,
+		WorkDir:                 cfg.HistoryDir,
+		ClaudeMaxOutputTokens:   cfg.ClaudeMaxOutputTokens,
+		ClaudeMaxThinkingTokens: cfg.ClaudeMaxThinkingTokens,
+		ClaudeEffort:            cfg.ClaudeEffort,
 	}, logger)
 	dialog := llm.NewConversation(dialogProvider, tutorPrompt)
 

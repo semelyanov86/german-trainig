@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"german-trainer/internal/llm"
 )
@@ -39,6 +40,9 @@ func (s *Summarizer) Run(historyContent string) error {
 		return fmt.Errorf("summary generation: %w", err)
 	}
 	s.logger.Printf("Summary: generated %d chars", len(report))
+	if warn := checkReport(report); warn != "" {
+		s.logger.Printf("Summary: WARNING %s", warn)
+	}
 
 	if s.webhookURL == "" {
 		s.logger.Println("Summary: no webhook URL configured, skipping send")
@@ -55,6 +59,33 @@ func (s *Summarizer) generate(history string) (string, error) {
 		return "", err
 	}
 	return stripMarkdown(strings.TrimSpace(report)), nil
+}
+
+// minReportBytes: a complete six-section analysis runs 30–60k bytes, so
+// anything close to a few thousand means the model reply never made it here in
+// full.
+const minReportBytes = 5000
+
+// checkReport returns a description of why the report looks cut off, or "" when
+// it looks whole. A truncated report used to be sent to the webhook without a
+// trace in the log, which made the loss invisible until the report was read.
+func checkReport(report string) string {
+	if len(report) < minReportBytes {
+		return fmt.Sprintf("report looks truncated: %d bytes (expected at least %d)", len(report), minReportBytes)
+	}
+	last, _ := utf8.DecodeLastRuneInString(report)
+	if !strings.ContainsRune(".!?)»\"", last) {
+		return fmt.Sprintf("report does not end on a sentence, tail=%q", lastRunes(report, 60))
+	}
+	return ""
+}
+
+func lastRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[len(r)-n:])
 }
 
 func stripMarkdown(s string) string {

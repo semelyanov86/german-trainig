@@ -39,6 +39,11 @@ type Spec struct {
 	PolzaAPIKey string
 	ClaudeBin   string
 	WorkDir     string
+
+	// Claude CLI run settings (see config.Config); zero values are omitted.
+	ClaudeMaxOutputTokens   int
+	ClaudeMaxThinkingTokens int
+	ClaudeEffort            string
 }
 
 // New builds a Provider from a Spec. Defaults to the polza backend.

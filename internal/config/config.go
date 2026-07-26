@@ -48,6 +48,15 @@ type Config struct {
 	LLMSummaryTemperature string
 	LLMSummaryReasoning   string
 	LLMSummaryMaxTokens   int
+
+	// Claude CLI run settings, passed per invocation via --settings so the AGI
+	// runs neither depend on nor disturb the interactive settings of the user
+	// the CLI runs as. The output cap matters most: a full post-call analysis
+	// is ~25k output tokens and the CLI's own 32k default used to cut the
+	// reply in two.
+	ClaudeMaxOutputTokens   int    // CLAUDE_MAX_OUTPUT_TOKENS
+	ClaudeMaxThinkingTokens int    // CLAUDE_MAX_THINKING_TOKENS
+	ClaudeEffort            string // CLAUDE_EFFORT: low|medium|high|xhigh
 }
 
 func Load(path string) (*Config, error) {
@@ -145,6 +154,12 @@ func Load(path string) (*Config, error) {
 			cfg.LLMSummaryReasoning = val
 		case "LLM_SUMMARY_MAX_TOKENS":
 			cfg.LLMSummaryMaxTokens, _ = strconv.Atoi(val)
+		case "CLAUDE_MAX_OUTPUT_TOKENS":
+			cfg.ClaudeMaxOutputTokens, _ = strconv.Atoi(val)
+		case "CLAUDE_MAX_THINKING_TOKENS":
+			cfg.ClaudeMaxThinkingTokens, _ = strconv.Atoi(val)
+		case "CLAUDE_EFFORT":
+			cfg.ClaudeEffort = val
 		}
 	}
 	if err := sc.Err(); err != nil {
@@ -160,6 +175,15 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.LLMSummaryModel == "" {
 		cfg.LLMSummaryModel = "google/gemini-3.5-flash"
+	}
+	// 64k is the model ceiling and twice the CLI default; the analysis plus its
+	// thinking must fit in one reply. CLAUDE_EFFORT is left unset (the CLI's own
+	// setting applies) — set it to low/medium to spend fewer tokens per report.
+	if cfg.ClaudeMaxOutputTokens == 0 {
+		cfg.ClaudeMaxOutputTokens = 64000
+	}
+	if cfg.ClaudeMaxThinkingTokens == 0 {
+		cfg.ClaudeMaxThinkingTokens = 8192
 	}
 	return cfg, nil
 }
