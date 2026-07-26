@@ -21,7 +21,7 @@ import (
 const (
 	maxTurns    = 25
 	maxRecordMs = 150000
-	silenceSec  = 3
+	silenceSec  = 5
 	logFile     = "/tmp/german_trainer.log"
 	envFile     = "/etc/german-trainer/.env"
 	// Dedicated Asterisk MOH class for the "thinking" pause. It holds a pool of

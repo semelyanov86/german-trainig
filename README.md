@@ -183,7 +183,7 @@ OPENROUTER_API_KEY=sk-or-...
 
 1. **Call starts** → Asterisk runs AGI script via setuid wrapper
 2. **Greeting** → music plays while Claude generates a German greeting, then TTS plays it
-3. **Listen** → records user speech (up to 30s, stops after 3s silence)
+3. **Listen** → records user speech (up to 2.5 min, stops after 5s silence)
 4. **Transcribe** → sends audio to Groq Whisper API (~0.5s)
 5. **Respond** → music plays while Claude generates response, then TTS plays it
 6. **Repeat** → up to 25 turns per call
