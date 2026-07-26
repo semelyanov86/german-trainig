@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strconv"
 	"strings"
 )
 
@@ -45,10 +46,26 @@ func (c *Channel) Cmd(cmd string) string {
 	c.logger.Printf("AGI> %s", cmd)
 	fmt.Fprintf(c.writer, "%s\n", cmd)
 
-	if c.scanner.Scan() {
+	for c.scanner.Scan() {
 		resp := c.scanner.Text()
+
+		// Asterisk pushes a bare "HANGUP" line into our stdin when the caller
+		// hangs up. It is not a reply to our command, so skip it and keep
+		// reading — but remember the channel is gone.
+		if strings.TrimSpace(resp) == "HANGUP" {
+			c.logger.Println("HANGUP received from Asterisk")
+			c.dead = true
+			continue
+		}
+
 		c.logger.Printf("AGI< %s", resp)
-		if strings.Contains(resp, "511") || strings.Contains(resp, "dead channel") {
+
+		// A reply always starts with a 3-digit status code; 511 is
+		// "Command Not Permitted on a dead channel". Match the code as a
+		// prefix — a substring search also hits digits inside a perfectly
+		// normal reply ("200 result=25119 ...", "... endpos=511040"), which
+		// used to kill a live call mid-conversation.
+		if strings.HasPrefix(resp, "511") {
 			c.dead = true
 			c.logger.Println("Channel is dead, stopping AGI commands")
 		}
@@ -56,6 +73,27 @@ func (c *Channel) Cmd(cmd string) string {
 	}
 	c.dead = true
 	return ""
+}
+
+// Result extracts the numeric value of the "result=" field of an AGI reply
+// ("200 result=-1 endpos=1234" -> -1). Returns 0 and false when the reply
+// carries no parsable result. Callers must not substring-match on the raw
+// reply: "result=" and "endpos=" digits collide with status codes and with
+// each other.
+func Result(resp string) (int, bool) {
+	idx := strings.Index(resp, "result=")
+	if idx < 0 {
+		return 0, false
+	}
+	field := resp[idx+len("result="):]
+	if end := strings.IndexByte(field, ' '); end >= 0 {
+		field = field[:end]
+	}
+	n, err := strconv.Atoi(field)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 func (c *Channel) PlayAudio(wavPath string) {

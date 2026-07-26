@@ -176,7 +176,7 @@ func main() {
 		if !ch.IsAlive() {
 			break
 		}
-		if strings.Contains(resp, "result=-1") {
+		if res, ok := agi.Result(resp); ok && res == -1 {
 			logger.Println("Hangup during recording")
 			break
 		}
