@@ -25,7 +25,7 @@ There are no tests in this project.
 
 ## Architecture
 
-**Entrypoint:** `cmd/german_trainer/main.go` — conversation loop (max 25 turns). Runs as an Asterisk AGI process (stdin/stdout protocol). Music plays during LLM response generation.
+**Entrypoint:** `cmd/german_trainer/main.go` — conversation loop (max 25 turns). Runs as an Asterisk AGI process (stdin/stdout protocol). Music plays during LLM response generation *and* TTS synthesis — it is stopped inside `playTTS`, right before the reply audio is streamed.
 
 **Internal packages (all under `internal/`):**
 - `agi/` — Asterisk AGI protocol (reads vars, sends commands, plays audio via stdin/stdout)

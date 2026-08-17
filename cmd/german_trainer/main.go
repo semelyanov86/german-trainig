@@ -155,11 +155,11 @@ func main() {
 	}
 	logger.Printf("Greeting: %s", greeting)
 
-	ch.Cmd("EXEC StopMusicOnHold")
 	if !ch.IsAlive() {
 		return
 	}
 
+	// Music keeps playing — playTTS stops it once the audio is synthesized.
 	sess.WriteHistory("Tutor", greeting)
 	if !playTTS(ch, sess, synthesizer, greeting, logger) {
 		return
@@ -188,8 +188,8 @@ func main() {
 		}
 
 		// Start "thinking" music the moment the user stops talking. It masks
-		// the latency of STT + LLM and is stopped only once we have the
-		// tutor's reply, right before TTS playback.
+		// the latency of STT + LLM + TTS and is stopped inside playTTS, once
+		// the reply audio is ready and about to be streamed.
 		ch.Cmd("EXEC StartMusicOnHold " + mohClass)
 		if !ch.IsAlive() {
 			break
@@ -205,8 +205,9 @@ func main() {
 		if userText == "" {
 			logger.Println("Empty transcription, skipping")
 			nudge, _ := dialog.Call(sess.ReadHistory(), "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen.")
-			ch.Cmd("EXEC StopMusicOnHold")
-			if nudge != "" {
+			if nudge == "" {
+				ch.Cmd("EXEC StopMusicOnHold")
+			} else {
 				sess.WriteHistory("Tutor", nudge)
 				playTTS(ch, sess, synthesizer, nudge, logger)
 			}
@@ -221,7 +222,6 @@ func main() {
 			logger.Println("Farewell detected")
 			sess.WriteHistory("User", userText)
 			fw, _ := dialog.Call(sess.ReadHistory(), userText)
-			ch.Cmd("EXEC StopMusicOnHold")
 			if fw == "" {
 				fw = "Tschüss! Bis zum nächsten Mal!"
 			}
@@ -241,7 +241,6 @@ func main() {
 		}
 		logger.Printf("Tutor: %s", response)
 
-		ch.Cmd("EXEC StopMusicOnHold")
 		if !ch.IsAlive() {
 			break
 		}
@@ -272,8 +271,14 @@ func loadPrompt(path string, logger *log.Logger) string {
 	return skill.ExtractContent(string(raw))
 }
 
+// playTTS synthesizes the reply and streams it to the caller. Hold music is
+// expected to be running on entry: TTS is a network round trip (several seconds
+// on the hosted engines), so the music is stopped only after the audio file is
+// ready — otherwise the caller sits in silence for the whole synthesis. The
+// stop is unconditional so the music never survives a synthesis failure.
 func playTTS(ch *agi.Channel, sess *session.Session, synth tts.Synthesizer, text string, logger *log.Logger) bool {
 	wavPath, tmpFiles, err := synth.Synthesize(text)
+	ch.Cmd("EXEC StopMusicOnHold")
 	if err != nil {
 		logger.Printf("ERROR synthesizing: %v", err)
 		return ch.IsAlive()

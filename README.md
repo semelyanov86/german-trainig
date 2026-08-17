@@ -118,7 +118,7 @@ Reload: `asterisk -rx "dialplan reload"`
 
 ### 6. Call extension 555
 
-Dial `555` from a SIP phone connected to Asterisk. Music plays while the AI generates a greeting, then conversation begins.
+Dial `555` from a SIP phone connected to Asterisk. Music plays while the AI generates and voices a greeting, then conversation begins.
 
 ## Task commands
 
@@ -182,9 +182,9 @@ OPENROUTER_API_KEY=sk-or-...
 ## How it works
 
 1. **Call starts** → Asterisk runs AGI script via setuid wrapper
-2. **Greeting** → music plays while Claude generates a German greeting, then TTS plays it
+2. **Greeting** → music plays while the LLM generates a German greeting and TTS synthesizes it, then the audio plays
 3. **Listen** → records user speech (up to 2.5 min, stops after 5s silence)
 4. **Transcribe** → sends audio to Groq Whisper API (~0.5s)
-5. **Respond** → music plays while Claude generates response, then TTS plays it
+5. **Respond** → music plays through transcription, LLM response and TTS synthesis, then the audio plays
 6. **Repeat** → up to 25 turns per call
 7. **End** → farewell detection or hangup triggers cleanup (history + temp files deleted)
