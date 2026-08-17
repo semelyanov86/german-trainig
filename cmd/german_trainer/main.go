@@ -52,7 +52,12 @@ func main() {
 
 	sess := session.New(cfg.HistoryDir, logger)
 	logger.Printf("Session %s, history: %s", sess.ID, sess.HistoryFile)
-	logger.Printf("LLM engine=%s dialog=%s summary=%s", cfg.LLMEngine, cfg.LLMModel, cfg.LLMSummaryModel)
+	// Log the engine and model per task, and resolve the model the way the
+	// backend will: on the claude engine the per-task ids are ignored in favour
+	// of CLAUDE_MODEL, and printing them anyway used to suggest otherwise.
+	logger.Printf("LLM dialog: engine=%s model=%s | summary: engine=%s model=%s",
+		cfg.LLMDialogEngine, effectiveModel(cfg.LLMDialogEngine, cfg.LLMModel, cfg.ClaudeModel),
+		cfg.LLMSummaryEngine, effectiveModel(cfg.LLMSummaryEngine, cfg.LLMSummaryModel, cfg.ClaudeModel))
 
 	// System prompts are loaded from files shipped with the app (not from
 	// server-side Claude skills), with YAML frontmatter stripped.
@@ -60,13 +65,14 @@ func main() {
 	summaryPrompt := loadPrompt(cfg.SummarySkillFile, logger)
 
 	summaryProvider := llm.New(llm.Spec{
-		Engine:                  cfg.LLMEngine,
+		Engine:                  cfg.LLMSummaryEngine,
 		Model:                   cfg.LLMSummaryModel,
 		ClaudeModel:             cfg.ClaudeModel,
 		Temperature:             cfg.LLMSummaryTemperature,
 		Reasoning:               cfg.LLMSummaryReasoning,
 		MaxTokens:               cfg.LLMSummaryMaxTokens,
 		PolzaAPIKey:             cfg.PolzaAPIKey,
+		OpenRouterAPIKey:        cfg.OpenRouterAPIKey,
 		ClaudeBin:               cfg.ClaudeBin,
 		WorkDir:                 cfg.HistoryDir,
 		ClaudeMaxOutputTokens:   cfg.ClaudeMaxOutputTokens,
@@ -110,13 +116,14 @@ func main() {
 		OpenRouterTTSFormat: cfg.OpenRouterTTSFormat,
 	}, logger)
 	dialogProvider := llm.New(llm.Spec{
-		Engine:                  cfg.LLMEngine,
+		Engine:                  cfg.LLMDialogEngine,
 		Model:                   cfg.LLMModel,
 		ClaudeModel:             cfg.ClaudeModel,
 		Temperature:             cfg.LLMDialogTemperature,
 		Reasoning:               cfg.LLMDialogReasoning,
 		MaxTokens:               cfg.LLMDialogMaxTokens,
 		PolzaAPIKey:             cfg.PolzaAPIKey,
+		OpenRouterAPIKey:        cfg.OpenRouterAPIKey,
 		ClaudeBin:               cfg.ClaudeBin,
 		WorkDir:                 cfg.HistoryDir,
 		ClaudeMaxOutputTokens:   cfg.ClaudeMaxOutputTokens,
@@ -255,6 +262,15 @@ func main() {
 	if ch.IsAlive() {
 		ch.Cmd("HANGUP")
 	}
+}
+
+// effectiveModel names the model a task will actually run on: the claude
+// backend takes its model from CLAUDE_MODEL and ignores the per-task ids.
+func effectiveModel(engine, model, claudeModel string) string {
+	if engine == llm.EngineClaude {
+		return claudeModel
+	}
+	return model
 }
 
 // loadPrompt reads a system-prompt file and strips its YAML frontmatter.

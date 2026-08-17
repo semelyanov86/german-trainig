@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Asterisk AGI application for practicing spoken German through phone calls. Written in Go (1.18+, no external dependencies). The call flow is: User calls -> Asterisk AGI -> STT (Groq Whisper / polza / openrouter) -> LLM (polza.ai by default, Claude CLI as fallback) -> TTS (polza / openrouter / OpenAI / ElevenLabs / Piper) -> audio back to user. After each call, a post-call summary is generated in Russian and sent via webhook.
+Asterisk AGI application for practicing spoken German through phone calls. Written in Go (1.18+, no external dependencies). The call flow is: User calls -> Asterisk AGI -> STT (Groq Whisper / polza / openrouter) -> LLM (polza / openrouter / Claude CLI) -> TTS (polza / openrouter / OpenAI / ElevenLabs / Piper) -> audio back to user. After each call, a post-call summary is generated in Russian and sent via webhook.
 
 ## Build & Deploy Commands
 
@@ -31,7 +31,7 @@ There are no tests in this project.
 - `agi/` — Asterisk AGI protocol (reads vars, sends commands, plays audio via stdin/stdout)
 - `config/` — Custom .env parser (reads from `/etc/german-trainer/.env`, not env vars)
 - `stt/` — Speech-to-text. `Transcriber` interface; factory in `stt.go` selects Groq Whisper, polza, or openrouter by `STT_ENGINE`
-- `llm/` — `Provider` interface (`Complete(system, messages)`); factory in `llm.go` selects the polza HTTP backend (`polza.go`, OpenAI-compatible chat completions) or the Claude CLI backend (`claude.go`), chosen by `LLM_ENGINE`. `Conversation` wraps a provider with the tutor system prompt. A separate provider instance is built per task so dialog and summary can use different models
+- `llm/` — `Provider` interface (`Complete(system, messages)`); factory in `llm.go` selects one of three backends: polza (`polza.go`), openrouter (`openrouter.go`) — both thin wrappers over the shared OpenAI-compatible chat client in `openai_compat.go` — or the Claude CLI (`claude.go`). `Conversation` wraps a provider with the tutor system prompt. A separate provider instance is built per task, so dialog and summary can use different **engines** as well as different models (see per-task engines below)
 - `tts/` — `Synthesizer` interface with five backends: polza, openrouter, OpenAI, ElevenLabs, Piper (local). Factory in `tts.go`, selected by `TTS_ENGINE` config. The openrouter backend accepts both JSON (`{"audio":…}`) and raw-bytes responses
 - `session/` — Per-call session: generates nano-timestamp ID, manages history file and temp file cleanup
 - `skill/` — Strips YAML frontmatter from prompt markdown files
@@ -42,14 +42,14 @@ There are no tests in this project.
 - `SKILL.md` — German tutor persona (direct, unfiltered B2-C1 conversation partner). All responses in German, max 2-3 sentences, plain text for TTS
 - `summary_skill.md` — Post-call analysis prompt (output in Russian)
 
-**Per-task models:** `LLM_MODEL` (dialog) and `LLM_SUMMARY_MODEL` (summary) are independent. Optional `LLM_DIALOG_*` / `LLM_SUMMARY_*` knobs (`TEMPERATURE`, `REASONING` effort, `MAX_TOKENS`) are sent only when set, so the same code path works for reasoning models (gpt-5.x, gemini-3.x) and plain ones (gpt-4o-mini).
+**Per-task engines and models:** `LLM_ENGINE` sets the baseline provider; `LLM_DIALOG_ENGINE` / `LLM_SUMMARY_ENGINE` override it per task, so the live dialog can run on a fast HTTP model while the post-call report runs through the Claude CLI. `LLM_MODEL` (dialog) and `LLM_SUMMARY_MODEL` (summary) are independent, and their built-in defaults depend on the resolved engine (`defaultModel` in `config.go`). Optional `LLM_DIALOG_*` / `LLM_SUMMARY_*` knobs (`TEMPERATURE`, `REASONING` effort, `MAX_TOKENS`) are sent only when set, so the same code path works for reasoning models (gpt-5.x, gemini-3.x) and plain ones. Watch `REASONING` on openrouter: models that are not reasoning-first still accept the field and turn thinking on, which costs seconds per turn.
 
 **Deployment:** `deploy/agi_wrapper.c` is a setuid-root C wrapper that executes the Go binary. Required because Asterisk runs AGI scripts as the asterisk user but the app needs root access.
 
 ## Key Design Decisions
 
 - Zero external Go dependencies (stdlib only, `go.mod` has no requires)
-- LLM access is HTTP (polza.ai, OpenAI-compatible) by default; Claude Code CLI subprocess is a switchable fallback
+- LLM access is HTTP (polza.ai or openrouter.ai, both OpenAI-compatible) by default; Claude Code CLI subprocess is a switchable fallback
 - Config is file-based (`/etc/german-trainer/.env`), not environment variables
 - All TTS engines convert to WAV (8kHz mono) for Asterisk playback via ffmpeg
 - Session cleanup removes both history and all temp audio files on call end

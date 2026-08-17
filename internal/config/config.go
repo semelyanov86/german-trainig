@@ -38,8 +38,12 @@ type Config struct {
 	OpenRouterTTSFormat string
 	ThemesFile          string
 
-	// LLM provider selection and per-task model settings.
-	LLMEngine             string // "polza" (default) or "claude"
+	// LLM provider selection and per-task model settings. LLM_ENGINE sets the
+	// baseline; LLM_DIALOG_ENGINE / LLM_SUMMARY_ENGINE override it per task, so
+	// the dialog can run on one provider and the post-call report on another.
+	LLMEngine             string // "polza" (default), "openrouter" or "claude"
+	LLMDialogEngine       string // optional override for the dialog
+	LLMSummaryEngine      string // optional override for the summary
 	LLMModel              string // dialog model id
 	LLMSummaryModel       string // post-call summary model id
 	LLMDialogTemperature  string // optional; omit for models that reject it
@@ -57,6 +61,22 @@ type Config struct {
 	ClaudeMaxOutputTokens   int    // CLAUDE_MAX_OUTPUT_TOKENS
 	ClaudeMaxThinkingTokens int    // CLAUDE_MAX_THINKING_TOKENS
 	ClaudeEffort            string // CLAUDE_EFFORT: low|medium|high|xhigh
+}
+
+// Built-in model for the openrouter backend. Pinned to an exact version on
+// purpose: OpenRouter's floating "~vendor/model-latest" aliases silently swap in
+// whatever is newest, and latency is part of the requirement here — a call turn
+// has to come back in about a second. Measured against SKILL.md, this model
+// answers in ~0.7s and keeps to the persona's format rules.
+const defaultOpenRouterModel = "mistralai/mistral-medium-3-5"
+
+// defaultModel picks the built-in model id for an engine. The claude backend
+// ignores it (it runs CLAUDE_MODEL), so only the HTTP backends need a value.
+func defaultModel(engine, polzaModel string) string {
+	if engine == "openrouter" {
+		return defaultOpenRouterModel
+	}
+	return polzaModel
 }
 
 func Load(path string) (*Config, error) {
@@ -138,6 +158,10 @@ func Load(path string) (*Config, error) {
 			cfg.ThemesFile = val
 		case "LLM_ENGINE":
 			cfg.LLMEngine = val
+		case "LLM_DIALOG_ENGINE":
+			cfg.LLMDialogEngine = val
+		case "LLM_SUMMARY_ENGINE":
+			cfg.LLMSummaryEngine = val
 		case "LLM_MODEL":
 			cfg.LLMModel = val
 		case "LLM_SUMMARY_MODEL":
@@ -170,11 +194,18 @@ func Load(path string) (*Config, error) {
 	if cfg.LLMEngine == "" {
 		cfg.LLMEngine = "polza"
 	}
+	// An unset per-task engine inherits the shared one.
+	if cfg.LLMDialogEngine == "" {
+		cfg.LLMDialogEngine = cfg.LLMEngine
+	}
+	if cfg.LLMSummaryEngine == "" {
+		cfg.LLMSummaryEngine = cfg.LLMEngine
+	}
 	if cfg.LLMModel == "" {
-		cfg.LLMModel = "openai/gpt-5.4-mini"
+		cfg.LLMModel = defaultModel(cfg.LLMDialogEngine, "openai/gpt-5.4-mini")
 	}
 	if cfg.LLMSummaryModel == "" {
-		cfg.LLMSummaryModel = "google/gemini-3.5-flash"
+		cfg.LLMSummaryModel = defaultModel(cfg.LLMSummaryEngine, "google/gemini-3.5-flash")
 	}
 	// 64k is the model ceiling and twice the CLI default; the analysis plus its
 	// thinking must fit in one reply. CLAUDE_EFFORT is left unset (the CLI's own

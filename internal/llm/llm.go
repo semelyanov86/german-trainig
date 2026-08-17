@@ -24,21 +24,29 @@ type Provider interface {
 	Complete(system string, messages []Message) (string, error)
 }
 
+// Available backends. Each task (dialog, summary) picks one independently.
+const (
+	EnginePolza      = "polza"
+	EngineOpenRouter = "openrouter"
+	EngineClaude     = "claude"
+)
+
 // Spec describes how to build a provider for one task (e.g. dialog or summary).
 // Optional fields (Temperature, Reasoning, MaxTokens) are sent to the backend
 // only when set, so the same code works for both reasoning and plain models.
 type Spec struct {
-	Engine      string // "polza" (default) or "claude"
-	Model       string // provider-specific model id (used by polza)
+	Engine      string // EnginePolza (default), EngineOpenRouter or EngineClaude
+	Model       string // provider-specific model id (used by polza and openrouter)
 	ClaudeModel string // model id passed to the Claude CLI (used by claude)
 	Temperature string // optional; sent only if a valid float (some models reject it)
 	Reasoning   string // optional reasoning effort: minimal|low|medium|high
 	MaxTokens   int    // optional; sent only if > 0
 
 	// Shared backend settings.
-	PolzaAPIKey string
-	ClaudeBin   string
-	WorkDir     string
+	PolzaAPIKey      string
+	OpenRouterAPIKey string
+	ClaudeBin        string
+	WorkDir          string
 
 	// Claude CLI run settings (see config.Config); zero values are omitted.
 	ClaudeMaxOutputTokens   int
@@ -49,8 +57,10 @@ type Spec struct {
 // New builds a Provider from a Spec. Defaults to the polza backend.
 func New(s Spec, logger *log.Logger) Provider {
 	switch s.Engine {
-	case "claude":
+	case EngineClaude:
 		return newClaude(s, logger)
+	case EngineOpenRouter:
+		return newOpenRouter(s, logger)
 	default:
 		return newPolza(s, logger)
 	}

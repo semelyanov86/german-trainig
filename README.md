@@ -3,7 +3,7 @@
 Asterisk AGI application for practicing spoken German through phone calls.
 
 ```
-User calls → Asterisk AGI → Groq Whisper (STT) → Claude CLI (LLM) → OpenAI/ElevenLabs/Piper (TTS) → audio back to user
+User calls → Asterisk AGI → STT (Groq/polza/openrouter) → LLM (polza/openrouter/Claude CLI) → TTS (polza/openrouter/OpenAI/ElevenLabs/Piper) → audio back to user
 ```
 
 ## Prerequisites
@@ -34,7 +34,12 @@ internal/
     piper.go                  — Piper local TTS
     polza.go                  — polza.ai cloud TTS
     openrouter.go             — openrouter.ai cloud TTS
-  llm/claude.go               — LLM via Claude CLI
+  llm/
+    llm.go                    — LLM interface, Spec and factory
+    openai_compat.go          — shared OpenAI-compatible chat client
+    polza.go                  — LLM via polza.ai
+    openrouter.go             — LLM via openrouter.ai
+    claude.go                 — LLM via Claude CLI
   session/session.go          — call session, history, cleanup
   skill/skill.go              — skill file frontmatter parser
   farewell/farewell.go        — farewell phrase detection
@@ -178,6 +183,36 @@ STT_ENGINE=openrouter
 TTS_ENGINE=openrouter
 OPENROUTER_API_KEY=sk-or-...
 ```
+
+## Switching LLM engine
+
+Edit `LLM_ENGINE` in `/etc/german-trainer/.env`:
+
+| Value | Engine | Notes |
+|---|---|---|
+| `polza` | polza.ai | OpenAI-compatible chat. Model via `LLM_MODEL` / `LLM_SUMMARY_MODEL`, key `POLZA_API_KEY`. Default `openai/gpt-5.4-mini` (dialog) |
+| `openrouter` | openrouter.ai | OpenAI-compatible chat. Same model keys, key `OPENROUTER_API_KEY`. Default `mistralai/mistral-medium-3-5` |
+| `claude` | Claude Code CLI | Runs the local CLI as a subprocess. Uses `CLAUDE_MODEL` and **ignores** `LLM_MODEL` / `LLM_SUMMARY_MODEL` |
+
+The dialog and the post-call report pick their engine independently:
+`LLM_DIALOG_ENGINE` and `LLM_SUMMARY_ENGINE` override `LLM_ENGINE` when set.
+
+Example — fast HTTP model on the call, Claude CLI for the report:
+```bash
+LLM_ENGINE=claude              # baseline: the report inherits this
+LLM_DIALOG_ENGINE=openrouter   # the live conversation only
+LLM_MODEL=mistralai/mistral-medium-3-5
+LLM_DIALOG_REASONING=          # must stay empty, see below
+```
+
+Latency is the binding constraint for the dialog: a turn already costs the
+caller STT plus TTS time, so the LLM has roughly a second to spare. Reasoning
+models spend several seconds "thinking" before the first word and are a poor
+fit — measured against `SKILL.md`, `~x-ai/grok-latest` averaged 15s per turn
+and `google/gemini-3.7-flash` 4s (its thinking cannot be switched off), while
+`mistralai/mistral-medium-3-5` answered in 0.7s. Note that non-reasoning models
+often *accept* `LLM_DIALOG_REASONING` and turn thinking on: that one field takes
+mistral-medium-3-5 from 0.7s to 6.2s. Leave it empty unless the model needs it.
 
 ## How it works
 
