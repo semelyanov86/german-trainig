@@ -44,7 +44,10 @@ There are no tests in this project.
 
 **Per-task engines and models:** `LLM_ENGINE` sets the baseline provider; `LLM_DIALOG_ENGINE` / `LLM_SUMMARY_ENGINE` override it per task, so the live dialog can run on a fast HTTP model while the post-call report runs through the Claude CLI. `LLM_MODEL` (dialog) and `LLM_SUMMARY_MODEL` (summary) are independent, and their built-in defaults depend on the resolved engine (`defaultModel` in `config.go`). Optional `LLM_DIALOG_*` / `LLM_SUMMARY_*` knobs (`TEMPERATURE`, `REASONING` effort, `MAX_TOKENS`) are sent only when set, so the same code path works for reasoning models (gpt-5.x, gemini-3.x) and plain ones. Watch `REASONING` on openrouter: models that are not reasoning-first still accept the field and turn thinking on, which costs seconds per turn.
 
-**Deployment:** `deploy/agi_wrapper.c` is a setuid-root C wrapper that executes the Go binary. Required because Asterisk runs AGI scripts as the asterisk user but the app needs root access.
+**Deployment (production reality, verified 2026-08-19):** the server is provisioned by Ansible (`serv-infrastracture` repo, role `german_trainer`, playbook `playbooks/07-telephony.yml`), **not** by `task deploy`. The role clones this repo to `/opt/german-trainer`, builds both binaries, installs them to `/usr/share/asterisk/agi-bin/`, and copies `SKILL.md` / `summary_skill.md` to `/etc/german-trainer/`. Two consequences to keep in mind:
+
+- **`/etc/german-trainer/.env` is rendered from the Ansible vault** (`vault_german_trainer_env` → `env.j2`). Editing it on the server works until the next playbook run, which silently reverts it — engine/model changes belong in the vault.
+- **The setuid-root C wrapper is not in the live path.** The dialplan calls `AGI(german_trainer_agi)` — a shell wrapper deployed by Ansible that `exec`s the Go binary through `chrt --other 0 nice -n 5`, because Asterisk runs with `-p` (SCHED_RR:10) and children inherit the real-time policy: `ffmpeg`/`claude` then compete with Asterisk's media timer at equal RT priority and the audio stutters. The AGI therefore runs as the **asterisk** user with no privilege elevation, and the dialplan sets `AGISIGHUP=no` so a hangup lets the process finish its post-call summary. `deploy/agi_wrapper.c` and `task deploy` remain usable for a manual/local install only.
 
 ## Key Design Decisions
 
