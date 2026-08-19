@@ -3,6 +3,7 @@ package llm
 import (
 	"fmt"
 	"log"
+	"time"
 )
 
 // Chat message roles.
@@ -31,6 +32,41 @@ const (
 	EngineClaude     = "claude"
 )
 
+// RetryPolicy bounds the automatic retries of a temporary provider failure
+// (HTTP 429/5xx, connection errors). The two tasks want very different profiles:
+// a dialog turn happens while the caller waits on hold music, so it retries fast
+// and few times, while the post-call summary has nobody listening and can wait.
+type RetryPolicy struct {
+	Attempts  int           // total attempts including the first; < 1 means 1
+	BaseDelay time.Duration // first backoff step, doubled on each further attempt
+	MaxDelay  time.Duration // cap for the backoff and for any Retry-After hint
+	Timeout   time.Duration // per-attempt HTTP timeout
+}
+
+// Built-in retry profile, used for any field the caller left at zero.
+const (
+	defaultRetryAttempts  = 3
+	defaultRetryBaseDelay = 500 * time.Millisecond
+	defaultRetryMaxDelay  = 5 * time.Second
+	defaultRetryTimeout   = 120 * time.Second
+)
+
+func (r RetryPolicy) withDefaults() RetryPolicy {
+	if r.Attempts < 1 {
+		r.Attempts = defaultRetryAttempts
+	}
+	if r.BaseDelay <= 0 {
+		r.BaseDelay = defaultRetryBaseDelay
+	}
+	if r.MaxDelay <= 0 {
+		r.MaxDelay = defaultRetryMaxDelay
+	}
+	if r.Timeout <= 0 {
+		r.Timeout = defaultRetryTimeout
+	}
+	return r
+}
+
 // Spec describes how to build a provider for one task (e.g. dialog or summary).
 // Optional fields (Temperature, Reasoning, MaxTokens) are sent to the backend
 // only when set, so the same code works for both reasoning and plain models.
@@ -41,6 +77,18 @@ type Spec struct {
 	Temperature string // optional; sent only if a valid float (some models reject it)
 	Reasoning   string // optional reasoning effort: minimal|low|medium|high
 	MaxTokens   int    // optional; sent only if > 0
+
+	// FallbackModels are tried, in order, when Model errors out. Sent as
+	// OpenRouter's "models" array, which is why this is openrouter-only: the
+	// router itself moves down the list inside a single request, so an upstream
+	// rate limit on Model costs no extra round trip. Every id is validated up
+	// front, so one typo rejects the whole request — the provider notices that
+	// and retries without the list rather than failing the turn.
+	FallbackModels []string
+
+	// Retry bounds the retries of a temporary failure; zero fields take the
+	// built-in profile.
+	Retry RetryPolicy
 
 	// Shared backend settings.
 	PolzaAPIKey      string

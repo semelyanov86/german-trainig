@@ -53,6 +53,16 @@ type Config struct {
 	LLMSummaryReasoning   string
 	LLMSummaryMaxTokens   int
 
+	// Resilience knobs. A provider outage used to end a turn in silence: on
+	// 2026-08-19 OpenRouter's shared pool for the dialog model answered 429 for
+	// several minutes and the call degraded into a loop of empty turns. The
+	// fallback lists let OpenRouter answer from another model inside the same
+	// request; the retry counts cover a short-lived blip.
+	LLMDialogFallbackModels  []string // LLM_DIALOG_FALLBACK_MODELS (comma-separated)
+	LLMSummaryFallbackModels []string // LLM_SUMMARY_FALLBACK_MODELS (comma-separated)
+	LLMDialogRetries         int      // LLM_DIALOG_RETRIES, attempts per turn
+	LLMSummaryRetries        int      // LLM_SUMMARY_RETRIES, attempts per report
+
 	// Claude CLI run settings, passed per invocation via --settings so the AGI
 	// runs neither depend on nor disturb the interactive settings of the user
 	// the CLI runs as. The output cap matters most: a full post-call analysis
@@ -70,6 +80,21 @@ type Config struct {
 // answers in ~0.7s and keeps to the persona's format rules.
 const defaultOpenRouterModel = "mistralai/mistral-medium-3-5"
 
+// Built-in fallback chain for the openrouter backend, in order. The entries must
+// sit behind a *different* upstream vendor than the default model (Mistral): a
+// shared-pool rate limit hits one vendor at a time, and that is exactly what
+// took the dialog down on 2026-08-19.
+//
+// Measured on a tutor-sized German turn against ~0.6s for the primary:
+// google/gemini-3.5-flash-lite 0.6-1.1s at $0.00017 (Google, half the primary's
+// cost per turn), openai/gpt-5.4-mini 0.9-1.7s, anthropic/claude-haiku-4.5
+// 1.7-2.5s. Latency is the requirement here, hence the order. Also verified:
+// flash-lite reports reasoning_tokens=0, i.e. it does not silently think — a
+// real hazard on gemini-3.x, where thinking costs seconds per turn.
+var defaultOpenRouterFallbacks = []string{
+	"google/gemini-3.5-flash-lite",
+}
+
 // defaultModel picks the built-in model id for an engine. The claude backend
 // ignores it (it runs CLAUDE_MODEL), so only the HTTP backends need a value.
 func defaultModel(engine, polzaModel string) string {
@@ -77,6 +102,37 @@ func defaultModel(engine, polzaModel string) string {
 		return defaultOpenRouterModel
 	}
 	return polzaModel
+}
+
+// splitModels parses a comma-separated model list, dropping blanks.
+func splitModels(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if m := strings.TrimSpace(part); m != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// resolveFallbacks settles the fallback chain for one task. Only the openrouter
+// engine can use one (it is sent as that API's "models" array), and the primary
+// model is filtered out: it is always tried first anyway, and OpenRouter
+// validates every id in the list, so a duplicate is pointless noise.
+func resolveFallbacks(engine string, configured []string, primary string) []string {
+	if engine != "openrouter" {
+		return nil
+	}
+	if configured == nil {
+		configured = defaultOpenRouterFallbacks
+	}
+	out := make([]string, 0, len(configured))
+	for _, m := range configured {
+		if m != primary {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 func Load(path string) (*Config, error) {
@@ -178,6 +234,16 @@ func Load(path string) (*Config, error) {
 			cfg.LLMSummaryReasoning = val
 		case "LLM_SUMMARY_MAX_TOKENS":
 			cfg.LLMSummaryMaxTokens, _ = strconv.Atoi(val)
+		case "LLM_DIALOG_FALLBACK_MODELS":
+			// A present-but-empty key means "no fallback", which is why this is
+			// a non-nil empty slice: nil selects the built-in chain below.
+			cfg.LLMDialogFallbackModels = append([]string{}, splitModels(val)...)
+		case "LLM_SUMMARY_FALLBACK_MODELS":
+			cfg.LLMSummaryFallbackModels = append([]string{}, splitModels(val)...)
+		case "LLM_DIALOG_RETRIES":
+			cfg.LLMDialogRetries, _ = strconv.Atoi(val)
+		case "LLM_SUMMARY_RETRIES":
+			cfg.LLMSummaryRetries, _ = strconv.Atoi(val)
 		case "CLAUDE_MAX_OUTPUT_TOKENS":
 			cfg.ClaudeMaxOutputTokens, _ = strconv.Atoi(val)
 		case "CLAUDE_MAX_THINKING_TOKENS":
@@ -207,6 +273,18 @@ func Load(path string) (*Config, error) {
 	if cfg.LLMSummaryModel == "" {
 		cfg.LLMSummaryModel = defaultModel(cfg.LLMSummaryEngine, "google/gemini-3.5-flash")
 	}
+	// A dialog turn is retried while the caller waits on hold music, so it gets
+	// fewer attempts than the post-call report, which nobody is listening to.
+	if cfg.LLMDialogRetries == 0 {
+		cfg.LLMDialogRetries = 2
+	}
+	if cfg.LLMSummaryRetries == 0 {
+		cfg.LLMSummaryRetries = 3
+	}
+	// Fallback chains depend on the model ids resolved just above.
+	cfg.LLMDialogFallbackModels = resolveFallbacks(cfg.LLMDialogEngine, cfg.LLMDialogFallbackModels, cfg.LLMModel)
+	cfg.LLMSummaryFallbackModels = resolveFallbacks(cfg.LLMSummaryEngine, cfg.LLMSummaryFallbackModels, cfg.LLMSummaryModel)
+
 	// 64k is the model ceiling and twice the CLI default; the analysis plus its
 	// thinking must fit in one reply. CLAUDE_EFFORT is left unset (the CLI's own
 	// setting applies) — set it to low/medium to spend fewer tokens per report.

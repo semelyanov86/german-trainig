@@ -81,11 +81,24 @@ func (c *Channel) Cmd(cmd string) string {
 // reply: "result=" and "endpos=" digits collide with status codes and with
 // each other.
 func Result(resp string) (int, bool) {
-	idx := strings.Index(resp, "result=")
+	return numField(resp, "result=")
+}
+
+// Endpos extracts the "endpos=" field. After RECORD FILE it is the length of
+// the recording in samples (8000 per second on a standard channel), measured
+// after Asterisk cut the trailing silence it detected — so it approximates how
+// much the caller actually said.
+func Endpos(resp string) (int, bool) {
+	return numField(resp, "endpos=")
+}
+
+// numField reads one "name=<int>" field out of an AGI reply.
+func numField(resp, name string) (int, bool) {
+	idx := strings.Index(resp, name)
 	if idx < 0 {
 		return 0, false
 	}
-	field := resp[idx+len("result="):]
+	field := resp[idx+len(name):]
 	if end := strings.IndexByte(field, ' '); end >= 0 {
 		field = field[:end]
 	}

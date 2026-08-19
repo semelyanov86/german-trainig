@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
+	"unicode"
 
 	"german-trainer/internal/agi"
 	"german-trainer/internal/config"
@@ -28,6 +30,44 @@ const (
 	// AI-generated calm instrumental tracks with sort=random, so each hold plays
 	// different music. Scoped to this app — the global "default" class is untouched.
 	mohClass = "german-thinking"
+
+	// Samples per second on a standard Asterisk channel; endpos is in samples.
+	recordSampleRate = 8000
+	// A recording holding less speech than this counts as "the caller said
+	// nothing", and the STT round trip is skipped. Asterisk trims the trailing
+	// silence, so endpos is roughly the speech it heard: every dead turn of the
+	// 2026-08-19 call came back with ~1.02s (8160 samples) of line noise, out of
+	// which the STT engine then invented words.
+	minSpeechSamples = 9600 // 1.2s
+	// After this many dialog failures in a row the call ends with a spoken
+	// apology instead of looping through turns the model cannot answer.
+	maxConsecutiveErrors = 3
+)
+
+// Fixed German lines for the moments the model cannot supply the words. The
+// silence nudge is ordinary conversation, so it is written to the history like
+// any tutor turn; the technical ones are not — the post-call analysis grades the
+// caller's German, and an apology for our own outage is not tutor speech.
+const (
+	silenceLine = "Ich höre nichts. Sag bitte etwas!"
+	glitchLine  = "Entschuldigung, ich habe gerade ein technisches Problem. Sag das bitte noch einmal."
+	outageLine  = "Es tut mir leid, mein System antwortet im Moment nicht. Ruf bitte später noch einmal an. Tschüss!"
+)
+
+// Retry profiles per task. A dialog turn is retried with the caller waiting on
+// hold music, so it gives up quickly and lets the spoken fallback take over;
+// the post-call report has no listener and can sit out a longer outage.
+var (
+	dialogRetry = llm.RetryPolicy{
+		BaseDelay: 400 * time.Millisecond,
+		MaxDelay:  2 * time.Second,
+		Timeout:   20 * time.Second,
+	}
+	summaryRetry = llm.RetryPolicy{
+		BaseDelay: 2 * time.Second,
+		MaxDelay:  20 * time.Second,
+		Timeout:   180 * time.Second,
+	}
 )
 
 func main() {
@@ -55,9 +95,11 @@ func main() {
 	// Log the engine and model per task, and resolve the model the way the
 	// backend will: on the claude engine the per-task ids are ignored in favour
 	// of CLAUDE_MODEL, and printing them anyway used to suggest otherwise.
-	logger.Printf("LLM dialog: engine=%s model=%s | summary: engine=%s model=%s",
+	logger.Printf("LLM dialog: engine=%s model=%s%s | summary: engine=%s model=%s%s",
 		cfg.LLMDialogEngine, effectiveModel(cfg.LLMDialogEngine, cfg.LLMModel, cfg.ClaudeModel),
-		cfg.LLMSummaryEngine, effectiveModel(cfg.LLMSummaryEngine, cfg.LLMSummaryModel, cfg.ClaudeModel))
+		fallbackSuffix(cfg.LLMDialogFallbackModels),
+		cfg.LLMSummaryEngine, effectiveModel(cfg.LLMSummaryEngine, cfg.LLMSummaryModel, cfg.ClaudeModel),
+		fallbackSuffix(cfg.LLMSummaryFallbackModels))
 
 	// System prompts are loaded from files shipped with the app (not from
 	// server-side Claude skills), with YAML frontmatter stripped.
@@ -71,6 +113,8 @@ func main() {
 		Temperature:             cfg.LLMSummaryTemperature,
 		Reasoning:               cfg.LLMSummaryReasoning,
 		MaxTokens:               cfg.LLMSummaryMaxTokens,
+		FallbackModels:          cfg.LLMSummaryFallbackModels,
+		Retry:                   withAttempts(summaryRetry, cfg.LLMSummaryRetries),
 		PolzaAPIKey:             cfg.PolzaAPIKey,
 		OpenRouterAPIKey:        cfg.OpenRouterAPIKey,
 		ClaudeBin:               cfg.ClaudeBin,
@@ -122,6 +166,8 @@ func main() {
 		Temperature:             cfg.LLMDialogTemperature,
 		Reasoning:               cfg.LLMDialogReasoning,
 		MaxTokens:               cfg.LLMDialogMaxTokens,
+		FallbackModels:          cfg.LLMDialogFallbackModels,
+		Retry:                   withAttempts(dialogRetry, cfg.LLMDialogRetries),
 		PolzaAPIKey:             cfg.PolzaAPIKey,
 		OpenRouterAPIKey:        cfg.OpenRouterAPIKey,
 		ClaudeBin:               cfg.ClaudeBin,
@@ -157,7 +203,10 @@ func main() {
 	greeting, err := dialog.Call("", themePrompt)
 	if err != nil {
 		logger.Printf("ERROR initial LLM call: %v", err)
-		ch.Cmd("EXEC StopMusicOnHold")
+		// The caller is on hold music waiting to be greeted. Dropping the call
+		// here used to leave them listening to silence with no idea why; playTTS
+		// stops the music and speaks, so they at least hear that to call later.
+		playTTS(ch, sess, synthesizer, outageLine, logger)
 		return
 	}
 	logger.Printf("Greeting: %s", greeting)
@@ -172,7 +221,10 @@ func main() {
 		return
 	}
 
-	// Conversation loop
+	// Conversation loop. consecutiveErrors bounds a provider outage: without it
+	// a model that keeps failing turns the call into a silent spin — record
+	// nothing, transcribe noise, fail, repeat (2026-08-19).
+	consecutiveErrors := 0
 	for turn := 0; turn < maxTurns; turn++ {
 		logger.Printf("--- Turn %d ---", turn+1)
 
@@ -202,6 +254,17 @@ func main() {
 			break
 		}
 
+		// Skip the STT round trip when the recording holds no speech: on a
+		// silent line the engine invents short phrases ("다섯", "Jeg heter") and
+		// each invention used to become a real conversation turn.
+		if n, ok := agi.Endpos(resp); ok && n < minSpeechSamples {
+			logger.Printf("Recording holds only %.1fs of speech, treating as silence", speechSeconds(n))
+			if !promptForSpeech(ch, sess, synthesizer, dialog, logger) {
+				break
+			}
+			continue
+		}
+
 		userText, err := transcriber.Transcribe(wavPath)
 		if err != nil {
 			logger.Printf("ERROR transcribing: %v", err)
@@ -209,16 +272,9 @@ func main() {
 			continue
 		}
 		userText = strings.TrimSpace(userText)
-		if userText == "" {
-			logger.Println("Empty transcription, skipping")
-			nudge, _ := dialog.Call(sess.ReadHistory(), "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen.")
-			if nudge == "" {
-				ch.Cmd("EXEC StopMusicOnHold")
-			} else {
-				sess.WriteHistory("Tutor", nudge)
-				playTTS(ch, sess, synthesizer, nudge, logger)
-			}
-			if !ch.IsAlive() {
+		if userText == "" || isNonLatin(userText) {
+			logger.Printf("No usable transcription (%q), asking the caller to speak", userText)
+			if !promptForSpeech(ch, sess, synthesizer, dialog, logger) {
 				break
 			}
 			continue
@@ -228,8 +284,9 @@ func main() {
 		if farewell.IsFarewell(userText) {
 			logger.Println("Farewell detected")
 			sess.WriteHistory("User", userText)
-			fw, _ := dialog.Call(sess.ReadHistory(), userText)
-			if fw == "" {
+			fw, err := dialog.Call(sess.ReadHistory(), userText)
+			if err != nil || strings.TrimSpace(fw) == "" {
+				logger.Printf("WARN farewell reply unavailable (%v), using the fixed line", err)
 				fw = "Tschüss! Bis zum nächsten Mal!"
 			}
 			sess.WriteHistory("Tutor", fw)
@@ -242,10 +299,21 @@ func main() {
 		history := sess.ReadHistory()
 		response, err := dialog.Call(history, userText)
 		if err != nil {
-			logger.Printf("ERROR calling claude: %v", err)
-			ch.Cmd("EXEC StopMusicOnHold")
+			consecutiveErrors++
+			logger.Printf("ERROR dialog LLM (%d in a row): %v", consecutiveErrors, err)
+			// Say something either way — stopping the music and recording again
+			// is what made the failure feel like a frozen call.
+			if consecutiveErrors >= maxConsecutiveErrors {
+				logger.Printf("Giving up after %d failed turns in a row", consecutiveErrors)
+				playTTS(ch, sess, synthesizer, outageLine, logger)
+				break
+			}
+			if !playTTS(ch, sess, synthesizer, glitchLine, logger) {
+				break
+			}
 			continue
 		}
+		consecutiveErrors = 0
 		logger.Printf("Tutor: %s", response)
 
 		if !ch.IsAlive() {
@@ -262,6 +330,53 @@ func main() {
 	if ch.IsAlive() {
 		ch.Cmd("HANGUP")
 	}
+}
+
+// withAttempts fills in the attempt count of a retry profile from the config.
+func withAttempts(p llm.RetryPolicy, attempts int) llm.RetryPolicy {
+	p.Attempts = attempts
+	return p
+}
+
+// fallbackSuffix renders a fallback chain for the startup log line, so the log
+// shows which models a turn could land on and not just the one it asked for.
+func fallbackSuffix(models []string) string {
+	if len(models) == 0 {
+		return ""
+	}
+	return " (fallback: " + strings.Join(models, ", ") + ")"
+}
+
+// speechSeconds converts an endpos sample count into seconds.
+func speechSeconds(samples int) float64 {
+	return float64(samples) / recordSampleRate
+}
+
+// isNonLatin reports whether a transcript carries no Latin letters at all.
+// German is Latin script, so such a transcript is not something the caller
+// said: it is the STT engine hallucinating on a silent line, which it does in
+// whatever language it drifted to ("धन्यवाद", "音楽家").
+func isNonLatin(s string) bool {
+	for _, r := range s {
+		if unicode.Is(unicode.Latin, r) {
+			return false
+		}
+	}
+	return true
+}
+
+// promptForSpeech asks the caller to say something. The wording normally comes
+// from the tutor model so it fits the conversation; a fixed line stands in when
+// the model is unavailable, since silence is exactly what this branch exists to
+// avoid. Hold music is expected to be running — playTTS stops it.
+func promptForSpeech(ch *agi.Channel, sess *session.Session, synth tts.Synthesizer, dialog *llm.Conversation, logger *log.Logger) bool {
+	line, err := dialog.Call(sess.ReadHistory(), "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen.")
+	if err != nil || strings.TrimSpace(line) == "" {
+		logger.Printf("WARN nudge unavailable (%v), using the fixed line", err)
+		line = silenceLine
+	}
+	sess.WriteHistory("Tutor", line)
+	return playTTS(ch, sess, synth, line, logger)
 }
 
 // effectiveModel names the model a task will actually run on: the claude
