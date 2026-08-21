@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -37,6 +38,22 @@ type Config struct {
 	OpenRouterTTSVoice  string
 	OpenRouterTTSFormat string
 	ThemesFile          string
+
+	// The "custom" STT engine: any OpenAI-compatible audio/transcriptions
+	// endpoint, described entirely by config. In production this is the
+	// self-hosted whisper.cpp server, and keeping every detail here is the point
+	// — moving to another host or model must not need a rebuild.
+	CustomSTTURL      string        // CUSTOM_STT_URL, the full URL
+	CustomSTTAPIKey   string        // CUSTOM_STT_API_KEY, empty: no Authorization header
+	CustomSTTModel    string        // CUSTOM_STT_MODEL, empty: field not sent
+	CustomSTTLanguage string        // CUSTOM_STT_LANGUAGE, "auto": field not sent
+	CustomSTTTimeout  time.Duration // CUSTOM_STT_TIMEOUT, whole seconds
+
+	// STT fallback. One host with one GPU is a single point of failure, so a
+	// failed transcription can be retried on a hosted engine instead of costing
+	// the turn.
+	STTFallbackEngine  string        // STT_FALLBACK_ENGINE, empty: no fallback
+	STTFallbackTimeout time.Duration // STT_FALLBACK_TIMEOUT, whole seconds
 
 	// LLM provider selection and per-task model settings. LLM_ENGINE sets the
 	// baseline; LLM_DIALOG_ENGINE / LLM_SUMMARY_ENGINE override it per task, so
@@ -135,6 +152,17 @@ func resolveFallbacks(engine string, configured []string, primary string) []stri
 	return out
 }
 
+// seconds parses a duration written as whole seconds, the unit every timeout key
+// in the .env uses. A missing or malformed value yields 0, meaning "use the
+// built-in default".
+func seconds(v string) time.Duration {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return time.Duration(n) * time.Second
+}
+
 func Load(path string) (*Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -210,6 +238,20 @@ func Load(path string) (*Config, error) {
 			cfg.OpenRouterTTSVoice = val
 		case "OPENROUTER_TTS_FORMAT":
 			cfg.OpenRouterTTSFormat = val
+		case "CUSTOM_STT_URL":
+			cfg.CustomSTTURL = val
+		case "CUSTOM_STT_API_KEY":
+			cfg.CustomSTTAPIKey = val
+		case "CUSTOM_STT_MODEL":
+			cfg.CustomSTTModel = val
+		case "CUSTOM_STT_LANGUAGE":
+			cfg.CustomSTTLanguage = val
+		case "CUSTOM_STT_TIMEOUT":
+			cfg.CustomSTTTimeout = seconds(val)
+		case "STT_FALLBACK_ENGINE":
+			cfg.STTFallbackEngine = val
+		case "STT_FALLBACK_TIMEOUT":
+			cfg.STTFallbackTimeout = seconds(val)
 		case "THEMES_FILE":
 			cfg.ThemesFile = val
 		case "LLM_ENGINE":
@@ -284,6 +326,25 @@ func Load(path string) (*Config, error) {
 	// Fallback chains depend on the model ids resolved just above.
 	cfg.LLMDialogFallbackModels = resolveFallbacks(cfg.LLMDialogEngine, cfg.LLMDialogFallbackModels, cfg.LLMModel)
 	cfg.LLMSummaryFallbackModels = resolveFallbacks(cfg.LLMSummaryEngine, cfg.LLMSummaryFallbackModels, cfg.LLMSummaryModel)
+
+	// STT defaults. German is spelled out rather than left to the endpoint so a
+	// different server gets told explicitly; CUSTOM_STT_LANGUAGE=auto omits the
+	// field and lets the endpoint decide.
+	if cfg.CustomSTTLanguage == "" {
+		cfg.CustomSTTLanguage = "de"
+	}
+	// Longer than the self-hosted server's own 25s cut-off, so its error reaches
+	// the log instead of our own anonymous timeout.
+	if cfg.CustomSTTTimeout == 0 {
+		cfg.CustomSTTTimeout = 30 * time.Second
+	}
+	// The fallback engine runs after the primary already spent its budget, so it
+	// gets a tighter cap than its own default (60s on openrouter/polza): measured
+	// p99 there is 4.9s, and a caller who has listened to 50s of hold music has
+	// lost the turn either way.
+	if cfg.STTFallbackTimeout == 0 {
+		cfg.STTFallbackTimeout = 20 * time.Second
+	}
 
 	// 64k is the model ceiling and twice the CLI default; the analysis plus its
 	// thinking must fit in one reply. CLAUDE_EFFORT is left unset (the CLI's own

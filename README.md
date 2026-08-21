@@ -145,6 +145,44 @@ Edit `STT_ENGINE` in `/etc/german-trainer/.env`:
 | `groq` | Groq Whisper | `whisper-large-v3`. Requires `GROQ_API_KEY` |
 | `polza` | polza.ai | OpenAI-compatible. Model via `POLZA_STT_MODEL`, key `POLZA_API_KEY` |
 | `openrouter` | openrouter.ai | OpenAI-compatible. Model via `OPENROUTER_STT_MODEL`, key `OPENROUTER_API_KEY` |
+| `custom` | Any OpenAI-compatible endpoint | Self-hosted whisper in production. URL, key, model, language and timeout all come from the config — see below |
+
+### Custom (self-hosted) STT engine
+
+`custom` is a generic client for any OpenAI-compatible `audio/transcriptions`
+endpoint, so switching servers or models needs no rebuild:
+
+```bash
+STT_ENGINE=custom
+CUSTOM_STT_URL=https://dialog.praxisconcierge.de/api/v1/transcribe
+CUSTOM_STT_API_KEY=...            # empty: no Authorization header is sent
+CUSTOM_STT_MODEL=                 # empty: the field is not sent at all
+CUSTOM_STT_LANGUAGE=de            # "auto": the field is not sent, endpoint decides
+CUSTOM_STT_TIMEOUT=30             # seconds
+
+# A self-hosted endpoint is a single point of failure, so keep a hosted engine
+# behind it. Empty disables the fallback.
+STT_FALLBACK_ENGINE=openrouter
+STT_FALLBACK_TIMEOUT=20           # seconds, caps whichever engine is the fallback
+```
+
+On a failure of the primary engine (network error, timeout, 5xx, 503 "at
+capacity", 401) the audio goes to `STT_FALLBACK_ENGINE` and the log says so:
+
+```
+Custom STT took 1.59s
+WARN Custom STT failed (custom stt HTTP 503: at capacity), falling back to OpenRouter
+OpenRouter STT answered instead of Custom
+```
+
+An **empty** transcript is not a failure — that is how a VAD-equipped server
+reports "no speech" — so it is returned as is and the fallback is never asked to
+invent words out of silence. A reply *without* a `text` field (or one that is not
+JSON at all) is the opposite case: it counts as a failure and does go to the
+fallback, so a wrong URL answering `200` cannot masquerade as a silent caller.
+
+An unrecognised `STT_FALLBACK_ENGINE` is refused with an `ERROR` in the log
+instead of quietly resolving to Groq, so a typo cannot redirect the audio.
 
 ## Switching TTS engine
 

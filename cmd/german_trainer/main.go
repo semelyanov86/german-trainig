@@ -141,6 +141,13 @@ func main() {
 		PolzaSTTModel:      cfg.PolzaSTTModel,
 		OpenRouterAPIKey:   cfg.OpenRouterAPIKey,
 		OpenRouterSTTModel: cfg.OpenRouterSTTModel,
+		CustomSTTURL:       cfg.CustomSTTURL,
+		CustomSTTAPIKey:    cfg.CustomSTTAPIKey,
+		CustomSTTModel:     cfg.CustomSTTModel,
+		CustomSTTLanguage:  cfg.CustomSTTLanguage,
+		CustomSTTTimeout:   cfg.CustomSTTTimeout,
+		FallbackEngine:     cfg.STTFallbackEngine,
+		FallbackTimeout:    cfg.STTFallbackTimeout,
 	}, logger)
 	synthesizer := tts.New(cfg.TTSEngine, tts.Config{
 		SessionID:           sess.ID,
