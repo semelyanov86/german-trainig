@@ -28,7 +28,8 @@ internal/
     polza.go                  — Speech-to-Text via polza.ai
     openrouter.go             — Speech-to-Text via openrouter.ai
   tts/
-    tts.go                    — TTS interface and factory
+    tts.go                    — TTS interface, factory and the style filter
+    style.go                  — expression-tag dialect per TTS model
     openai.go                 — OpenAI cloud TTS
     elevenlabs.go             — ElevenLabs cloud TTS
     piper.go                  — Piper local TTS
@@ -195,6 +196,25 @@ Edit `TTS_ENGINE` in `/etc/german-trainer/.env`:
 | `piper` | Piper (local) | Free, no API needed, runs offline. Requires piper-tts + voice model |
 | `polza` | polza.ai | OpenAI-compatible. Model via `POLZA_TTS_MODEL`, voice `POLZA_TTS_VOICE`, key `POLZA_API_KEY` |
 | `openrouter` | openrouter.ai | OpenAI-compatible. Model via `OPENROUTER_TTS_MODEL`, voice `OPENROUTER_TTS_VOICE`, key `OPENROUTER_API_KEY` |
+
+### Expression tags
+
+The tutor writes the emotion into its own reply — `[laugh]`, `<whisper>…</whisper>`,
+`[sarcastically]` — and the voice plays the tag instead of reading it. Each vendor
+spells the markup differently, so the dialect is resolved from the TTS model id and
+its vocabulary is appended to the tutor system prompt at startup:
+
+| Model id contains | Dialect | Markup |
+|---|---|---|
+| `grok` + `tts` | grok | 12 inline sounds (`[laugh]`, `[sigh]`, `[pause]`, …) plus 12 wrapping styles (`<whisper>…</whisper>`, `<slow>`, `<angry>`, …) |
+| `gemini` + `tts` | gemini | any descriptive word in square brackets (`[sarcastically]`, `[giggles]`, `[very fast]`) |
+| ElevenLabs `v3` | elevenlabs | audio tags in square brackets (`[laughs]`, `[whispers]`, `[sarcastic]`) |
+| anything else | off | none — the model is told to write plain text |
+
+`TTS_STYLE_TAGS` overrides the detection: `auto` (default), `off`, or a dialect name.
+Whatever the dialect, every reply is filtered before synthesis: markup the engine
+does not know is removed rather than spoken out loud, and the history file — the
+input to the post-call analysis — is always stored without tags.
 
 Example — switch to OpenAI with a different voice:
 ```bash

@@ -149,7 +149,7 @@ func main() {
 		FallbackEngine:     cfg.STTFallbackEngine,
 		FallbackTimeout:    cfg.STTFallbackTimeout,
 	}, logger)
-	synthesizer := tts.New(cfg.TTSEngine, tts.Config{
+	synthesizer, voice := tts.New(cfg.TTSEngine, tts.Config{
 		SessionID:           sess.ID,
 		ElevenAPIKey:        cfg.ElevenAPIKey,
 		ElevenVoiceID:       cfg.ElevenVoiceID,
@@ -165,7 +165,18 @@ func main() {
 		OpenRouterTTSModel:  cfg.OpenRouterTTSModel,
 		OpenRouterTTSVoice:  cfg.OpenRouterTTSVoice,
 		OpenRouterTTSFormat: cfg.OpenRouterTTSFormat,
+		StyleTags:           cfg.TTSStyleTags,
 	}, logger)
+	// The tutor writes the expression tags itself, so the vocabulary of the
+	// voice that will read the reply is appended to its system prompt. Which
+	// vocabulary that is depends on the TTS model, and the model is a vault
+	// setting: the prompt has to follow it instead of naming one set of tags.
+	if voice.Supported() {
+		logger.Printf("TTS style tags: %s dialect", voice.Name)
+		tutorPrompt = tutorPrompt + "\n\n" + voice.Guide
+	} else {
+		logger.Printf("TTS style tags: none, %s speaks plain text", cfg.TTSEngine)
+	}
 	dialogProvider := llm.New(llm.Spec{
 		Engine:                  cfg.LLMDialogEngine,
 		Model:                   cfg.LLMModel,
@@ -223,7 +234,7 @@ func main() {
 	}
 
 	// Music keeps playing — playTTS stops it once the audio is synthesized.
-	sess.WriteHistory("Tutor", greeting)
+	sess.WriteHistory("Tutor", tts.PlainText(greeting))
 	if !playTTS(ch, sess, synthesizer, greeting, logger) {
 		return
 	}
@@ -296,7 +307,7 @@ func main() {
 				logger.Printf("WARN farewell reply unavailable (%v), using the fixed line", err)
 				fw = "Tschüss! Bis zum nächsten Mal!"
 			}
-			sess.WriteHistory("Tutor", fw)
+			sess.WriteHistory("Tutor", tts.PlainText(fw))
 			playTTS(ch, sess, synthesizer, fw, logger)
 			break
 		}
@@ -327,7 +338,7 @@ func main() {
 			break
 		}
 
-		sess.WriteHistory("Tutor", response)
+		sess.WriteHistory("Tutor", tts.PlainText(response))
 		if !playTTS(ch, sess, synthesizer, response, logger) {
 			break
 		}
@@ -382,7 +393,7 @@ func promptForSpeech(ch *agi.Channel, sess *session.Session, synth tts.Synthesiz
 		logger.Printf("WARN nudge unavailable (%v), using the fixed line", err)
 		line = silenceLine
 	}
-	sess.WriteHistory("Tutor", line)
+	sess.WriteHistory("Tutor", tts.PlainText(line))
 	return playTTS(ch, sess, synth, line, logger)
 }
 

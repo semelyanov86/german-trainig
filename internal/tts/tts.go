@@ -1,6 +1,10 @@
 package tts
 
-import "log"
+import (
+	"fmt"
+	"log"
+	"strings"
+)
 
 type Synthesizer interface {
 	Synthesize(text string) (wavPath string, tempFiles []string, err error)
@@ -22,9 +26,20 @@ type Config struct {
 	OpenRouterTTSModel  string
 	OpenRouterTTSVoice  string
 	OpenRouterTTSFormat string
+	StyleTags           string
 }
 
-func New(engine string, cfg Config, logger *log.Logger) Synthesizer {
+// New builds the synthesizer for an engine together with the expression-tag
+// dialect its model understands. The dialect is returned because it is needed
+// in two places: the caller appends its Guide to the tutor system prompt so the
+// model writes the right markup, and the synthesizer filters every reply
+// through it so markup the engine cannot read is never spoken out loud.
+func New(engine string, cfg Config, logger *log.Logger) (Synthesizer, Dialect) {
+	dialect := DialectFor(engine, cfg, logger)
+	return &styled{backend: newBackend(engine, cfg, logger), dialect: dialect, logger: logger}, dialect
+}
+
+func newBackend(engine string, cfg Config, logger *log.Logger) Synthesizer {
 	switch engine {
 	case "elevenlabs":
 		return &ElevenLabsSynth{cfg: cfg, logger: logger}
@@ -37,4 +52,26 @@ func New(engine string, cfg Config, logger *log.Logger) Synthesizer {
 	default:
 		return &PiperSynth{cfg: cfg, logger: logger}
 	}
+}
+
+// styled filters the reply through the dialect before handing it to the
+// backend. It sits in front of every engine, not only the ones with tags: the
+// model writes markdown and stage directions of its own accord (`*wirklich*`,
+// `[lacht]`) however plainly the prompt forbids them, and every one of those
+// reaches the caller as spoken punctuation.
+type styled struct {
+	backend Synthesizer
+	dialect Dialect
+	logger  *log.Logger
+}
+
+func (s *styled) Synthesize(text string) (string, []string, error) {
+	clean := s.dialect.Sanitize(text)
+	if clean != strings.TrimSpace(text) {
+		s.logger.Printf("TTS: cleaned style markup (%s): %q -> %q", s.dialect.Name, text, clean)
+	}
+	if clean == "" {
+		return "", nil, fmt.Errorf("tts: nothing left to speak in %q", text)
+	}
+	return s.backend.Synthesize(clean)
 }

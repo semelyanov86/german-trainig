@@ -37,6 +37,7 @@ type Config struct {
 	OpenRouterTTSModel  string
 	OpenRouterTTSVoice  string
 	OpenRouterTTSFormat string
+	TTSStyleTags        string // grok|gemini|elevenlabs|off|auto (see tts.DialectFor)
 	ThemesFile          string
 
 	// The "custom" STT engine: any OpenAI-compatible audio/transcriptions
@@ -200,6 +201,8 @@ func Load(path string) (*Config, error) {
 			cfg.OpenAIVoice = val
 		case "TTS_ENGINE":
 			cfg.TTSEngine = val
+		case "TTS_STYLE_TAGS":
+			cfg.TTSStyleTags = val
 		case "CLAUDE_MODEL":
 			cfg.ClaudeModel = val
 		case "PIPER_MODEL":
