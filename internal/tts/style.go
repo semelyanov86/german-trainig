@@ -196,8 +196,10 @@ func dialectForModel(model string) Dialect {
 const grokGuide = `## Stimme und Emotion
 
 Deine Antwort geht an eine Sprachausgabe, die Regie-Tags versteht: sie werden
-nicht vorgelesen, sondern gespielt. Setze sie sparsam — höchstens zwei pro
-Antwort, und nur dort, wo ein Mensch auch wirklich so klingen würde.
+nicht vorgelesen, sondern gespielt. **Setze in jede Antwort ein Tag** — zwei,
+wenn die Antwort wirklich zwei Momente hat, nie mehr als zwei. Eine Antwort
+ganz ohne Tag ist die Ausnahme, nicht die Regel: ohne Tag klingt deine Stimme
+flach, und genau das ist der Grund, warum es diesen Abschnitt gibt.
 
 Einzelne Laute, genau an der Stelle im Satz:
 [pause] [long-pause] [laugh] [cry] [sob] [sigh] [cough] [throat-clear] [smack] [breath] [exhale] [inhale]
@@ -222,6 +224,11 @@ Deine Antwort geht an eine Sprachausgabe, die Regie-Tags in eckigen Klammern
 versteht: sie werden nicht vorgelesen, sondern gespielt. Das Tag-Wort ist
 englisch, der gesprochene Text bleibt deutsch.
 
+**Setze in jede Antwort ein Tag** — zwei, wenn die Antwort wirklich zwei
+Momente hat, nie mehr als zwei. Eine Antwort ganz ohne Tag ist die Ausnahme,
+nicht die Regel: ohne Tag klingt deine Stimme flach, und genau das ist der
+Grund, warum es diesen Abschnitt gibt.
+
 Du bist in der Wahl frei, das Modell interpretiert jede Beschreibung. Bewährt:
 [sarcastically] [amused] [deadpan] [curious] [serious] [excited] [bored]
 [mischievously] [tired] [whispers] [shouting] [very fast] [very slowly]
@@ -232,8 +239,8 @@ So sieht das aus:
 [sarcastically] Sehr bequem. [sighs] Was müsste passieren, damit du aufstehst?
 
 Regeln:
-- Höchstens zwei Tags pro Antwort, und nur dort, wo ein Mensch auch wirklich
-  so klingen würde.
+- Das Tag sitzt da, wo ein Mensch auch wirklich so klingen würde — nicht
+  dekorativ am Satzanfang, wenn der Satz nüchtern ist.
 - Nie zwei Tags direkt hintereinander — dazwischen gehört Text oder ein
   Satzzeichen.
 - Tags ersetzen keine Wörter: ohne sie muss der Satz vollständig dastehen.
@@ -246,6 +253,10 @@ Deine Antwort geht an eine Sprachausgabe, die Audio-Tags in eckigen Klammern
 versteht: sie werden nicht vorgelesen, sondern gespielt. Das Tag-Wort ist
 englisch, der gesprochene Text bleibt deutsch.
 
+**Setze in jede Antwort ein Tag** — zwei, wenn die Antwort wirklich zwei
+Momente hat, nie mehr als zwei. Eine Antwort ganz ohne Tag ist die Ausnahme,
+nicht die Regel.
+
 Bewährt: [laughs] [giggles] [sighs] [sarcastic] [amused] [curious] [excited]
 [serious] [whispers] [shouting] [snorts] [exhales] [long pause]
 
@@ -254,8 +265,8 @@ So sieht das aus:
 [sarcastic] Sehr bequem. [sighs] Was müsste passieren, damit du aufstehst?
 
 Regeln:
-- Höchstens zwei Tags pro Antwort, und nur dort, wo ein Mensch auch wirklich
-  so klingen würde.
+- Das Tag sitzt da, wo ein Mensch auch wirklich so klingen würde — nicht
+  dekorativ am Satzanfang, wenn der Satz nüchtern ist.
 - Nie zwei Tags direkt hintereinander.
 - Tags ersetzen keine Wörter: ohne sie muss der Satz vollständig dastehen.
 - Nur eckige Klammern. Spitze Klammern und Sternchen werden gelöscht.
