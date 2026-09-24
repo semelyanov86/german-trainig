@@ -1,0 +1,95 @@
+# Conversation profiles
+
+The AGI accepts zero or one positional argument. No argument (and the explicit
+ID `german`) selects the existing German trainer. A named profile must appear
+in `PROFILE_IDS` in `/etc/german-trainer/.env`; its settings are read only from
+`/etc/german-trainer/profiles/<id>.env`. IDs contain only lowercase ASCII
+letters, digits, `_` and `-`, start with a letter, and have at most 32
+characters. An unknown ID, extra argument, missing file or incomplete profile
+ends the AGI before it answers. An AGI argument never becomes a file path.
+
+The base `.env` still supplies provider credentials, shared endpoints, and
+defaults. The named file can override any existing model, engine, voice,
+timeout, retry, and prompt-path key. No migration is needed for 555. A named
+profile must explicitly set its scenario fields so it cannot inherit the
+German prompt, themes, report recipient, or custom STT language by accident.
+The profile's prompt must exist and contain text when the call starts.
+
+Minimum named profile file, using generic example text rather than a proposed
+support persona:
+
+```dotenv
+LANGUAGE=ru
+SKILL_FILE=/etc/german-trainer/support_skill.md
+GREETING_PROMPT=Начни разговор и поприветствуй собеседника.
+SILENCE_PROMPT=Попроси собеседника сказать что-нибудь.
+SILENCE_LINE=Я вас не слышу. Скажите, пожалуйста, что-нибудь.
+FAREWELL_LINE=До свидания.
+GLITCH_LINE=Извините, возникла техническая ошибка. Повторите, пожалуйста.
+OUTAGE_LINE=Извините, сервис сейчас недоступен. Позвоните позже.
+FAREWELL_PHRASES=до свидания,всего доброго
+HISTORY_ROLE=Ассистент
+SUMMARY_ENABLED=false
+LOG_UTTERANCES=false
+STT_LANGUAGE=ru
+CUSTOM_STT_LANGUAGE=ru
+LLM_MODEL=provider/model-for-this-profile
+OPENROUTER_TTS_VOICE=voice-for-this-profile
+```
+
+`LANGUAGE=de|ru` selects the transcript script guard, LLM history wrapper,
+and TTS expression-tag guide. `STT_LANGUAGE` controls Groq, polza and
+OpenRouter; it defaults to `LANGUAGE`. `CUSTOM_STT_LANGUAGE` separately
+controls the custom endpoint and also defaults to `STT_LANGUAGE` for a named
+profile. `auto` omits the language field. The German profile retains its old
+`CUSTOM_STT_LANGUAGE` value and defaults to `de` when absent. For a themed
+profile, set both `THEMES_FILE` and `THEME_PROMPT` with `{theme}` at the desired
+insertion point. Without a themes file, `GREETING_PROMPT` is used directly.
+`FAREWELL_PHRASES` is a comma-separated list; `FAREWELL_LINE` is the fixed
+fallback when the model cannot answer a farewell. The silence, glitch and
+outage lines are also fixed spoken fallbacks.
+Use unambiguous farewell phrases. Russian detection requires word boundaries;
+the German profile retains its historical substring matching.
+
+`SUMMARY_ENABLED=false` skips report model creation, report generation and
+webhook delivery. It is the default for named profiles; the German default is
+true. If enabled, set `SUMMARY_SKILL_FILE` for the report's system prompt,
+`SUMMARY_PREFIX` for the instruction preceding the transcript, and
+`NOTIFY_WEBHOOK_URL` plus `NOTIFY_WEBHOOK_TOKEN` if the report should be sent.
+Named profiles do not inherit the German report prompt or recipient. An empty
+webhook URL generates a report but does not send or save it. `LOG_UTTERANCES`
+defaults to false for named profiles: the shared text log then retains only
+fixed diagnostic categories, failure kinds and HTTP status codes, with no utterances, raw
+provider responses, request URLs or CLI stderr. Per-call history files have
+mode `0600` and are removed after the call. The German logging default remains
+true.
+
+## Production routing and recording
+
+The source of truth is the Ansible roles under `/data/server/ansible`, not
+`task deploy` or the repository's older dialplan example. The current 555 route
+in `roles/asterisk/templates/extensions.conf.j2` calls
+`AGI(german_trainer_agi)` without an argument and calls `GoSub(sub-monitor,s,1)`.
+That subroutine starts `MixMonitor` and runs `send_recording_wrapper.sh` when
+recording ends. AGI profile settings cannot disable that separate audio path.
+Leave 555 as it is. On a future extension, pass a literal ID such as
+`AGI(german_trainer_agi,support)` and decide whether that route invokes
+`sub-monitor`. Omitting it disables both full-call recording and its audio
+webhook; a record-without-send policy needs a distinct dialplan subroutine.
+Do not alter the shared `sub-monitor`, which serves other calls. Preserve
+`AGISIGHUP=no` on a route that needs a post-hangup report. The Ansible AGI
+wrapper already forwards arguments to the Go binary.
+
+For a future profile, update the Ansible vault-rendered `.env` with
+`PROFILE_IDS`, deploy the named profile file and its prompt files with
+appropriate ownership and permissions from `roles/german_trainer`, and add
+the new extension in `roles/asterisk`. Choose and review the report recipient,
+recording/send policy, provider data flow, transcript retention and caller
+notice before routing any calls. Crisis handling belongs after STT and the
+silence/noise guard, before farewell detection and the ordinary LLM turn in
+`cmd/german_trainer/main.go`; its escalation rules and human/emergency
+handoff need a separate design before a support profile goes live.
+Before that launch, move per-turn WAV and generated TTS files into a private
+directory with explicit permissions and crash cleanup. The current Claude CLI
+backend passes the conversation in a process argument; use an HTTP provider
+for private calls unless that transport is changed.

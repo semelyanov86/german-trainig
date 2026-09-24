@@ -33,6 +33,33 @@ type Dialect struct {
 // Supported returns whether the engine understands any expression tag at all.
 func (d Dialect) Supported() bool { return d.Guide != "" }
 
+// GuideFor keeps the German production prompt unchanged and gives other
+// profiles instructions in their own language. Sanitization remains shared.
+func (d Dialect) GuideFor(language string) string {
+	if language != "ru" {
+		return d.Guide
+	}
+	switch d.Name {
+	case "grok":
+		return `## Голос и эмоции
+
+Ответ будет озвучен. Используй не более двух уместных тегов на ответ. Теги пишутся по-английски, произносимый текст остаётся по-русски.
+Допустимые отдельные звуки: [pause] [long-pause] [laugh] [cry] [sob] [sigh] [cough] [throat-clear] [smack] [breath] [exhale] [inhale].
+Для отрывка текста можно использовать парные теги: <soft> <loud> <shouting> <whisper> <high> <low> <slow> <fast> <singing> <sad> <angry> <happy>.
+Не добавляй других тегов. Слова должны быть понятны и без тегов.`
+	case "gemini":
+		return `## Голос и эмоции
+
+Ответ будет озвучен. Уместно добавь один, максимум два английских тега эмоции в квадратных скобках; произносимый текст остаётся по-русски. Например: [curious] [calm] [serious]. Не заменяй тегами слова и не ставь два тега подряд.`
+	case "elevenlabs":
+		return `## Голос и эмоции
+
+Ответ будет озвучен. Уместно добавь один, максимум два английских аудиотега в квадратных скобках; произносимый текст остаётся по-русски. Например: [curious] [serious] [sighs]. Не заменяй тегами слова и не ставь два тега подряд.`
+	default:
+		return ""
+	}
+}
+
 // markupPattern matches one piece of markup: an expression tag in square or
 // angle brackets, or a run of asterisks. The length cap keeps an unclosed
 // bracket in ordinary text from swallowing a whole sentence, and German uses

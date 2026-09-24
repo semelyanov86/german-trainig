@@ -16,15 +16,23 @@ type Summarizer struct {
 	webhookURL   string
 	webhookToken string
 	logger       *log.Logger
+	prefix       string
+	logContent   bool
 }
 
 func New(provider llm.Provider, systemPrompt, webhookURL, webhookToken string, logger *log.Logger) *Summarizer {
+	return NewWithPolicy(provider, systemPrompt, webhookURL, webhookToken, "Вот транскрипт разговора:\n\n", true, logger)
+}
+
+func NewWithPolicy(provider llm.Provider, systemPrompt, webhookURL, webhookToken, prefix string, logContent bool, logger *log.Logger) *Summarizer {
 	return &Summarizer{
 		provider:     provider,
 		systemPrompt: systemPrompt,
 		webhookURL:   webhookURL,
 		webhookToken: webhookToken,
 		logger:       logger,
+		prefix:       prefix,
+		logContent:   logContent,
 	}
 }
 
@@ -41,7 +49,11 @@ func (s *Summarizer) Run(historyContent string) error {
 	}
 	s.logger.Printf("Summary: generated %d chars", len(report))
 	if warn := checkReport(report); warn != "" {
-		s.logger.Printf("Summary: WARNING %s", warn)
+		if s.logContent {
+			s.logger.Printf("Summary: WARNING %s", warn)
+		} else {
+			s.logger.Println("Summary: WARNING report may be truncated")
+		}
 	}
 
 	if s.webhookURL == "" {
@@ -53,7 +65,7 @@ func (s *Summarizer) Run(historyContent string) error {
 }
 
 func (s *Summarizer) generate(history string) (string, error) {
-	user := fmt.Sprintf("Вот транскрипт разговора:\n\n%s", history)
+	user := s.prefix + history
 	report, err := s.provider.Complete(s.systemPrompt, []llm.Message{{Role: llm.RoleUser, Content: user}})
 	if err != nil {
 		return "", err
@@ -123,7 +135,11 @@ func stripMarkdown(s string) string {
 }
 
 func (s *Summarizer) sendWebhook(report string) error {
-	s.logger.Printf("Summary: sending to %s", s.webhookURL)
+	if s.logContent {
+		s.logger.Printf("Summary: sending to %s", s.webhookURL)
+	} else {
+		s.logger.Println("Summary: sending webhook")
+	}
 
 	req, err := http.NewRequest(http.MethodPost, s.webhookURL, strings.NewReader(report))
 	if err != nil {

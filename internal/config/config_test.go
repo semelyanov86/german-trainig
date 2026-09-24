@@ -1,0 +1,63 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestLegacyCallAndNamedProfile(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, ".env")
+	write(t, base, "PROFILE_IDS=support\nSKILL_FILE=/legacy/skill.md\nSUMMARY_SKILL_FILE=/legacy/summary.md\nTHEMES_FILE=/legacy/themes.txt\nCUSTOM_STT_LANGUAGE=auto\nLLM_MODEL=legacy-model\nOPENROUTER_TTS_VOICE=legacy-voice\nNOTIFY_WEBHOOK_URL=https://legacy.invalid/hook\n")
+	legacy, err := LoadProfile(base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explicit, err := LoadProfile(base, "german"); err != nil || explicit.SkillFile != legacy.SkillFile || explicit.SummaryEnabled != legacy.SummaryEnabled {
+		t.Fatalf("explicit German differs from no-argument call: %+v %v", explicit, err)
+	}
+	if legacy.ProfileID != "german" || legacy.SkillFile != "/legacy/skill.md" || legacy.ThemesFile != "/legacy/themes.txt" || legacy.CustomSTTLanguage != "auto" || legacy.STTLanguage != "de" || legacy.LLMModel != "legacy-model" || legacy.OpenRouterTTSVoice != "legacy-voice" || !legacy.SummaryEnabled || !legacy.LogUtterances {
+		t.Fatalf("legacy settings changed: %+v", legacy)
+	}
+	if legacy.GreetingPrompt != "Starte ein neues Gespräch. Begrüße den Anrufer und schlage ein Thema vor." || legacy.SilenceLine != "Ich höre nichts. Sag bitte etwas!" || legacy.FarewellLine != "Tschüss! Bis zum nächsten Mal!" {
+		t.Fatalf("legacy German lines changed: %+v", legacy)
+	}
+	if _, err := LoadProfile(base, "../../etc/passwd"); err == nil {
+		t.Fatal("path traversal accepted")
+	}
+	if _, err := LoadProfile(base, "unknown"); err == nil {
+		t.Fatal("unlisted profile accepted")
+	}
+	if _, err := LoadProfile(base, "support"); err == nil {
+		t.Fatal("listed profile without a file accepted")
+	}
+
+	profile := filepath.Join(dir, "profiles", "support.env")
+	write(t, profile, "LANGUAGE=ru\nSKILL_FILE=/private/support.md\nGREETING_PROMPT=Начни разговор.\nSILENCE_PROMPT=Попроси собеседника говорить.\nSILENCE_LINE=Я вас не слышу.\nFAREWELL_LINE=До свидания.\nGLITCH_LINE=Повторите, пожалуйста.\nOUTAGE_LINE=Позвоните позже.\nFAREWELL_PHRASES=пока,до свидания\nHISTORY_ROLE=Собеседник\nLLM_MODEL=private-model\nOPENROUTER_TTS_VOICE=private-voice\n")
+	private, err := LoadProfile(base, "support")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if private.Language != "ru" || private.STTLanguage != "ru" || private.CustomSTTLanguage != "ru" || private.LLMModel != "private-model" || private.OpenRouterTTSVoice != "private-voice" {
+		t.Fatalf("profile overrides ignored: %+v", private)
+	}
+	if private.SkillFile != "/private/support.md" || private.ThemesFile != "" || private.SummarySkillFile != "" || private.NotifyWebhookURL != "" || private.SummaryEnabled || private.LogUtterances {
+		t.Fatalf("private profile inherited German scenario or report: %+v", private)
+	}
+	write(t, profile, "LANGUAGE=ru\nSKILL_FILE=/private/support.md\nSUMMARY_ENABLED=true\n")
+	if _, err := LoadProfile(base, "support"); err == nil || !strings.Contains(err.Error(), "required scenario") {
+		t.Fatalf("incomplete profile accepted: %v", err)
+	}
+}
+
+func write(t *testing.T, path, data string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+}

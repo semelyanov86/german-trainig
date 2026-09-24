@@ -15,7 +15,7 @@ func polzaSpec(cfg Config) sttSpec {
 		endpoint: polzaSTTEndpoint,
 		apiKey:   cfg.PolzaAPIKey,
 		model:    model,
-		language: "de",
+		language: language(cfg),
 		timeout:  60 * time.Second,
 	}
 }

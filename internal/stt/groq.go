@@ -15,7 +15,7 @@ func groqSpec(cfg Config) sttSpec {
 		endpoint: groqEndpoint,
 		apiKey:   cfg.GroqAPIKey,
 		model:    groqModel,
-		language: "de",
+		language: language(cfg),
 		timeout:  30 * time.Second,
 	}
 }

@@ -1,5 +1,9 @@
 # German Trainer — AI-powered German conversation practice via phone
 
+For the AGI conversation-profile interface and the production recording
+boundary, see [docs/profiles.md](docs/profiles.md). The live 555 route and
+deployment are managed by Ansible.
+
 Asterisk AGI application for practicing spoken German through phone calls.
 
 ```

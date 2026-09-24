@@ -29,7 +29,7 @@ func (s *Session) AddTempFiles(files ...string) {
 }
 
 func (s *Session) WriteHistory(speaker, text string) {
-	f, err := os.OpenFile(s.HistoryFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(s.HistoryFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		s.logger.Printf("ERROR writing history: %v", err)
 		return

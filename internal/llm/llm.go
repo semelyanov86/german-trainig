@@ -120,11 +120,16 @@ func New(s Spec, logger *log.Logger) Provider {
 type Conversation struct {
 	provider Provider
 	system   string
+	language string
 }
 
 // NewConversation wraps a provider with the tutor system prompt.
 func NewConversation(p Provider, systemPrompt string) *Conversation {
-	return &Conversation{provider: p, system: systemPrompt}
+	return NewConversationForLanguage(p, systemPrompt, "de")
+}
+
+func NewConversationForLanguage(p Provider, systemPrompt, language string) *Conversation {
+	return &Conversation{provider: p, system: systemPrompt, language: language}
 }
 
 // Call produces the tutor's reply. When history is empty (the very first
@@ -133,7 +138,11 @@ func NewConversation(p Provider, systemPrompt string) *Conversation {
 func (c *Conversation) Call(history, userMessage string) (string, error) {
 	var content string
 	if history != "" {
-		content = fmt.Sprintf("Gesprächsverlauf:\n%s\n\nLetzte Nachricht des Nutzers: %s\n\nAntworte nur auf die letzte Nachricht.", history, userMessage)
+		if c.language == "ru" {
+			content = fmt.Sprintf("История разговора:\n%s\n\nПоследнее сообщение пользователя: %s\n\nОтветь только на последнее сообщение.", history, userMessage)
+		} else {
+			content = fmt.Sprintf("Gesprächsverlauf:\n%s\n\nLetzte Nachricht des Nutzers: %s\n\nAntworte nur auf die letzte Nachricht.", history, userMessage)
+		}
 	} else {
 		content = userMessage
 	}

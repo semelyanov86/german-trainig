@@ -11,6 +11,7 @@ type Transcriber interface {
 }
 
 type Config struct {
+	Language           string // hosted engines; defaults to German for legacy callers
 	GroqAPIKey         string
 	PolzaAPIKey        string
 	PolzaSTTModel      string
@@ -31,6 +32,16 @@ type Config struct {
 	// independent of the timeout that engine uses as a primary.
 	FallbackEngine  string
 	FallbackTimeout time.Duration
+}
+
+func language(cfg Config) string {
+	if cfg.Language == "" {
+		return "de"
+	}
+	if strings.EqualFold(cfg.Language, "auto") {
+		return ""
+	}
+	return cfg.Language
 }
 
 // New builds the transcriber for the configured engine, wrapped in a fallback to

@@ -16,7 +16,7 @@ func openRouterSpec(cfg Config) sttSpec {
 		endpoint: openRouterSTTEndpoint,
 		apiKey:   cfg.OpenRouterAPIKey,
 		model:    model,
-		language: "de",
+		language: language(cfg),
 		timeout:  60 * time.Second,
 	}
 }

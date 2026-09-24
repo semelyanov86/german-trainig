@@ -10,6 +10,7 @@ import (
 
 	"german-trainer/internal/agi"
 	"german-trainer/internal/config"
+	"german-trainer/internal/diaglog"
 	"german-trainer/internal/farewell"
 	"german-trainer/internal/llm"
 	"german-trainer/internal/session"
@@ -44,16 +45,6 @@ const (
 	maxConsecutiveErrors = 3
 )
 
-// Fixed German lines for the moments the model cannot supply the words. The
-// silence nudge is ordinary conversation, so it is written to the history like
-// any tutor turn; the technical ones are not — the post-call analysis grades the
-// caller's German, and an apology for our own outage is not tutor speech.
-const (
-	silenceLine = "Ich höre nichts. Sag bitte etwas!"
-	glitchLine  = "Entschuldigung, ich habe gerade ein technisches Problem. Sag das bitte noch einmal."
-	outageLine  = "Es tut mir leid, mein System antwortet im Moment nicht. Ruf bitte später noch einmal an. Tschüss!"
-)
-
 // Retry profiles per task. A dialog turn is retried with the caller waiting on
 // hold music, so it gives up quickly and lets the spoken fallback take over;
 // the post-call report has no listener and can sit out a longer outage.
@@ -71,7 +62,12 @@ var (
 )
 
 func main() {
-	cfg, err := config.Load(envFile)
+	profileID, err := selectedProfile(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	cfg, err := config.LoadProfile(envFile, profileID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config: %v\n", err)
 		os.Exit(1)
@@ -83,7 +79,12 @@ func main() {
 		os.Exit(1)
 	}
 	defer lf.Close()
-	logger := log.New(lf, "", log.LstdFlags)
+	var logger *log.Logger
+	if cfg.LogUtterances {
+		logger = log.New(lf, "", log.LstdFlags)
+	} else {
+		logger = log.New(diaglog.Writer{Output: lf, ProfileID: cfg.ProfileID}, "", log.LstdFlags)
+	}
 
 	ch := agi.NewChannel(os.Stdin, os.Stdout, logger)
 	ch.ReadVars()
@@ -104,38 +105,27 @@ func main() {
 	// System prompts are loaded from files shipped with the app (not from
 	// server-side Claude skills), with YAML frontmatter stripped.
 	tutorPrompt := loadPrompt(cfg.SkillFile, logger)
-	summaryPrompt := loadPrompt(cfg.SummarySkillFile, logger)
+	var summaryPrompt string
+	if cfg.SummaryEnabled {
+		summaryPrompt = loadPrompt(cfg.SummarySkillFile, logger)
+	}
+	if cfg.ProfileID != "german" && (tutorPrompt == "" || (cfg.SummaryEnabled && summaryPrompt == "")) {
+		logger.Println("ERROR named profile prompt is missing or empty")
+		return
+	}
 
-	summaryProvider := llm.New(llm.Spec{
-		Engine:                  cfg.LLMSummaryEngine,
-		Model:                   cfg.LLMSummaryModel,
-		ClaudeModel:             cfg.ClaudeModel,
-		Temperature:             cfg.LLMSummaryTemperature,
-		Reasoning:               cfg.LLMSummaryReasoning,
-		MaxTokens:               cfg.LLMSummaryMaxTokens,
-		FallbackModels:          cfg.LLMSummaryFallbackModels,
-		Retry:                   withAttempts(summaryRetry, cfg.LLMSummaryRetries),
-		PolzaAPIKey:             cfg.PolzaAPIKey,
-		OpenRouterAPIKey:        cfg.OpenRouterAPIKey,
-		ClaudeBin:               cfg.ClaudeBin,
-		WorkDir:                 cfg.HistoryDir,
-		ClaudeMaxOutputTokens:   cfg.ClaudeMaxOutputTokens,
-		ClaudeMaxThinkingTokens: cfg.ClaudeMaxThinkingTokens,
-		ClaudeEffort:            cfg.ClaudeEffort,
-	}, logger)
-	summarizer := summary.New(
-		summaryProvider, summaryPrompt,
-		cfg.NotifyWebhookURL, cfg.NotifyWebhookToken,
-		logger,
-	)
+	summarizer := newSummarizer(cfg, summaryPrompt, logger)
 	defer func() {
-		if err := summarizer.Run(sess.ReadHistory()); err != nil {
-			logger.Printf("ERROR generating summary: %v", err)
+		if summarizer != nil {
+			if err := summarizer.Run(sess.ReadHistory()); err != nil {
+				logger.Printf("ERROR generating summary: %v", err)
+			}
 		}
 		sess.Cleanup()
 	}()
 
 	transcriber := stt.New(cfg.STTEngine, stt.Config{
+		Language:           cfg.STTLanguage,
 		GroqAPIKey:         cfg.GroqAPIKey,
 		PolzaAPIKey:        cfg.PolzaAPIKey,
 		PolzaSTTModel:      cfg.PolzaSTTModel,
@@ -166,6 +156,7 @@ func main() {
 		OpenRouterTTSVoice:  cfg.OpenRouterTTSVoice,
 		OpenRouterTTSFormat: cfg.OpenRouterTTSFormat,
 		StyleTags:           cfg.TTSStyleTags,
+		LogUtterances:       cfg.LogUtterances,
 	}, logger)
 	// The tutor writes the expression tags itself, so the vocabulary of the
 	// voice that will read the reply is appended to its system prompt. Which
@@ -173,28 +164,12 @@ func main() {
 	// setting: the prompt has to follow it instead of naming one set of tags.
 	if voice.Supported() {
 		logger.Printf("TTS style tags: %s dialect", voice.Name)
-		tutorPrompt = tutorPrompt + "\n\n" + voice.Guide
+		tutorPrompt = tutorPrompt + "\n\n" + voice.GuideFor(cfg.Language)
 	} else {
 		logger.Printf("TTS style tags: none, %s speaks plain text", cfg.TTSEngine)
 	}
-	dialogProvider := llm.New(llm.Spec{
-		Engine:                  cfg.LLMDialogEngine,
-		Model:                   cfg.LLMModel,
-		ClaudeModel:             cfg.ClaudeModel,
-		Temperature:             cfg.LLMDialogTemperature,
-		Reasoning:               cfg.LLMDialogReasoning,
-		MaxTokens:               cfg.LLMDialogMaxTokens,
-		FallbackModels:          cfg.LLMDialogFallbackModels,
-		Retry:                   withAttempts(dialogRetry, cfg.LLMDialogRetries),
-		PolzaAPIKey:             cfg.PolzaAPIKey,
-		OpenRouterAPIKey:        cfg.OpenRouterAPIKey,
-		ClaudeBin:               cfg.ClaudeBin,
-		WorkDir:                 cfg.HistoryDir,
-		ClaudeMaxOutputTokens:   cfg.ClaudeMaxOutputTokens,
-		ClaudeMaxThinkingTokens: cfg.ClaudeMaxThinkingTokens,
-		ClaudeEffort:            cfg.ClaudeEffort,
-	}, logger)
-	dialog := llm.NewConversation(dialogProvider, tutorPrompt)
+	dialogProvider := llm.New(dialogSpec(cfg), logger)
+	dialog := llm.NewConversationForLanguage(dialogProvider, tutorPrompt, cfg.Language)
 
 	ch.Cmd("ANSWER")
 	if !ch.IsAlive() {
@@ -207,13 +182,15 @@ func main() {
 		return
 	}
 
-	themePrompt := "Starte ein neues Gespräch. Begrüße den Anrufer und schlage ein Thema vor."
+	themePrompt := cfg.GreetingPrompt
 	if cfg.ThemesFile != "" {
 		if t, err := theme.RandomTheme(cfg.ThemesFile); err != nil {
 			logger.Printf("WARN loading theme: %v, using default prompt", err)
 		} else {
-			logger.Printf("Selected theme: %s", t)
-			themePrompt = fmt.Sprintf("Starte ein neues Gespräch. Begrüße den Anrufer kurz und stelle ihm folgende Frage als Gesprächseinstieg: %s", t)
+			if cfg.LogUtterances {
+				logger.Printf("Selected theme: %s", t)
+			}
+			themePrompt = strings.ReplaceAll(cfg.ThemePrompt, "{theme}", t)
 		}
 	}
 
@@ -224,17 +201,19 @@ func main() {
 		// The caller is on hold music waiting to be greeted. Dropping the call
 		// here used to leave them listening to silence with no idea why; playTTS
 		// stops the music and speaks, so they at least hear that to call later.
-		playTTS(ch, sess, synthesizer, outageLine, logger)
+		playTTS(ch, sess, synthesizer, cfg.OutageLine, logger)
 		return
 	}
-	logger.Printf("Greeting: %s", greeting)
+	if cfg.LogUtterances {
+		logger.Printf("Greeting: %s", greeting)
+	}
 
 	if !ch.IsAlive() {
 		return
 	}
 
 	// Music keeps playing — playTTS stops it once the audio is synthesized.
-	sess.WriteHistory("Tutor", tts.PlainText(greeting))
+	sess.WriteHistory(cfg.HistoryRole, tts.PlainText(greeting))
 	if !playTTS(ch, sess, synthesizer, greeting, logger) {
 		return
 	}
@@ -277,7 +256,7 @@ func main() {
 		// each invention used to become a real conversation turn.
 		if n, ok := agi.Endpos(resp); ok && n < minSpeechSamples {
 			logger.Printf("Recording holds only %.1fs of speech, treating as silence", speechSeconds(n))
-			if !promptForSpeech(ch, sess, synthesizer, dialog, logger) {
+			if !promptForSpeech(ch, sess, synthesizer, dialog, cfg, logger) {
 				break
 			}
 			continue
@@ -290,24 +269,30 @@ func main() {
 			continue
 		}
 		userText = strings.TrimSpace(userText)
-		if userText == "" || isNonLatin(userText) {
-			logger.Printf("No usable transcription (%q), asking the caller to speak", userText)
-			if !promptForSpeech(ch, sess, synthesizer, dialog, logger) {
+		if userText == "" || !hasSpeechScript(userText, cfg.Language) {
+			if cfg.LogUtterances {
+				logger.Printf("No usable transcription (%q), asking the caller to speak", userText)
+			} else {
+				logger.Println("No usable transcription, asking the caller to speak")
+			}
+			if !promptForSpeech(ch, sess, synthesizer, dialog, cfg, logger) {
 				break
 			}
 			continue
 		}
-		logger.Printf("User said: %s", userText)
+		if cfg.LogUtterances {
+			logger.Printf("User said: %s", userText)
+		}
 
-		if farewell.IsFarewell(userText) {
+		if farewell.ContainsForLanguage(userText, cfg.FarewellPhrases, cfg.Language) {
 			logger.Println("Farewell detected")
 			sess.WriteHistory("User", userText)
 			fw, err := dialog.Call(sess.ReadHistory(), userText)
 			if err != nil || strings.TrimSpace(fw) == "" {
 				logger.Printf("WARN farewell reply unavailable (%v), using the fixed line", err)
-				fw = "Tschüss! Bis zum nächsten Mal!"
+				fw = cfg.FarewellLine
 			}
-			sess.WriteHistory("Tutor", tts.PlainText(fw))
+			sess.WriteHistory(cfg.HistoryRole, tts.PlainText(fw))
 			playTTS(ch, sess, synthesizer, fw, logger)
 			break
 		}
@@ -323,22 +308,24 @@ func main() {
 			// is what made the failure feel like a frozen call.
 			if consecutiveErrors >= maxConsecutiveErrors {
 				logger.Printf("Giving up after %d failed turns in a row", consecutiveErrors)
-				playTTS(ch, sess, synthesizer, outageLine, logger)
+				playTTS(ch, sess, synthesizer, cfg.OutageLine, logger)
 				break
 			}
-			if !playTTS(ch, sess, synthesizer, glitchLine, logger) {
+			if !playTTS(ch, sess, synthesizer, cfg.GlitchLine, logger) {
 				break
 			}
 			continue
 		}
 		consecutiveErrors = 0
-		logger.Printf("Tutor: %s", response)
+		if cfg.LogUtterances {
+			logger.Printf("%s: %s", cfg.HistoryRole, response)
+		}
 
 		if !ch.IsAlive() {
 			break
 		}
 
-		sess.WriteHistory("Tutor", tts.PlainText(response))
+		sess.WriteHistory(cfg.HistoryRole, tts.PlainText(response))
 		if !playTTS(ch, sess, synthesizer, response, logger) {
 			break
 		}
@@ -348,6 +335,62 @@ func main() {
 	if ch.IsAlive() {
 		ch.Cmd("HANGUP")
 	}
+}
+
+func selectedProfile(args []string) (string, error) {
+	if len(args) > 1 {
+		return "", fmt.Errorf("expected at most one profile ID")
+	}
+	if len(args) == 0 {
+		return "", nil
+	}
+	return args[0], nil
+}
+
+// A disabled profile never constructs a report provider or sends a webhook.
+func newSummarizer(cfg *config.Config, prompt string, logger *log.Logger) *summary.Summarizer {
+	if !cfg.SummaryEnabled {
+		return nil
+	}
+	provider := llm.New(summarySpec(cfg), logger)
+	return summary.NewWithPolicy(provider, prompt, cfg.NotifyWebhookURL, cfg.NotifyWebhookToken, cfg.SummaryPrefix, cfg.LogUtterances, logger)
+}
+
+func baseLLMSpec(cfg *config.Config) llm.Spec {
+	return llm.Spec{
+		ClaudeModel:             cfg.ClaudeModel,
+		PolzaAPIKey:             cfg.PolzaAPIKey,
+		OpenRouterAPIKey:        cfg.OpenRouterAPIKey,
+		ClaudeBin:               cfg.ClaudeBin,
+		WorkDir:                 cfg.HistoryDir,
+		ClaudeMaxOutputTokens:   cfg.ClaudeMaxOutputTokens,
+		ClaudeMaxThinkingTokens: cfg.ClaudeMaxThinkingTokens,
+		ClaudeEffort:            cfg.ClaudeEffort,
+	}
+}
+
+func dialogSpec(cfg *config.Config) llm.Spec {
+	s := baseLLMSpec(cfg)
+	s.Engine = cfg.LLMDialogEngine
+	s.Model = cfg.LLMModel
+	s.Temperature = cfg.LLMDialogTemperature
+	s.Reasoning = cfg.LLMDialogReasoning
+	s.MaxTokens = cfg.LLMDialogMaxTokens
+	s.FallbackModels = cfg.LLMDialogFallbackModels
+	s.Retry = withAttempts(dialogRetry, cfg.LLMDialogRetries)
+	return s
+}
+
+func summarySpec(cfg *config.Config) llm.Spec {
+	s := baseLLMSpec(cfg)
+	s.Engine = cfg.LLMSummaryEngine
+	s.Model = cfg.LLMSummaryModel
+	s.Temperature = cfg.LLMSummaryTemperature
+	s.Reasoning = cfg.LLMSummaryReasoning
+	s.MaxTokens = cfg.LLMSummaryMaxTokens
+	s.FallbackModels = cfg.LLMSummaryFallbackModels
+	s.Retry = withAttempts(summaryRetry, cfg.LLMSummaryRetries)
+	return s
 }
 
 // withAttempts fills in the attempt count of a retry profile from the config.
@@ -370,30 +413,28 @@ func speechSeconds(samples int) float64 {
 	return float64(samples) / recordSampleRate
 }
 
-// isNonLatin reports whether a transcript carries no Latin letters at all.
-// German is Latin script, so such a transcript is not something the caller
-// said: it is the STT engine hallucinating on a silent line, which it does in
-// whatever language it drifted to ("धन्यवाद", "音楽家").
-func isNonLatin(s string) bool {
+// hasSpeechScript keeps the line-noise guard while admitting Cyrillic for a
+// Russian profile. Punctuation or speech in unrelated scripts is discarded.
+func hasSpeechScript(s, language string) bool {
 	for _, r := range s {
-		if unicode.Is(unicode.Latin, r) {
-			return false
+		if (language == "ru" && unicode.Is(unicode.Cyrillic, r)) || (language != "ru" && unicode.Is(unicode.Latin, r)) {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 // promptForSpeech asks the caller to say something. The wording normally comes
 // from the tutor model so it fits the conversation; a fixed line stands in when
 // the model is unavailable, since silence is exactly what this branch exists to
 // avoid. Hold music is expected to be running — playTTS stops it.
-func promptForSpeech(ch *agi.Channel, sess *session.Session, synth tts.Synthesizer, dialog *llm.Conversation, logger *log.Logger) bool {
-	line, err := dialog.Call(sess.ReadHistory(), "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen.")
+func promptForSpeech(ch *agi.Channel, sess *session.Session, synth tts.Synthesizer, dialog *llm.Conversation, cfg *config.Config, logger *log.Logger) bool {
+	line, err := dialog.Call(sess.ReadHistory(), cfg.SilencePrompt)
 	if err != nil || strings.TrimSpace(line) == "" {
 		logger.Printf("WARN nudge unavailable (%v), using the fixed line", err)
-		line = silenceLine
+		line = cfg.SilenceLine
 	}
-	sess.WriteHistory("Tutor", tts.PlainText(line))
+	sess.WriteHistory(cfg.HistoryRole, tts.PlainText(line))
 	return playTTS(ch, sess, synth, line, logger)
 }
 

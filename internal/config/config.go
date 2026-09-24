@@ -4,12 +4,36 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
 
+// Scenario holds the conversation and privacy policy of one profile. The
+// provider configuration below is shared machinery, layered from .env files.
+type Scenario struct {
+	ProfileID       string
+	Language        string // de or ru: service prompts, transcript guard and TTS guide
+	STTLanguage     string // hosted STT; custom uses CUSTOM_STT_LANGUAGE when set
+	GreetingPrompt  string
+	ThemePrompt     string // {theme} is replaced with the selected theme
+	SilencePrompt   string
+	SilenceLine     string
+	FarewellLine    string
+	GlitchLine      string
+	OutageLine      string
+	FarewellPhrases []string
+	HistoryRole     string
+	SummaryEnabled  bool
+	SummaryPrefix   string
+	LogUtterances   bool
+}
+
 type Config struct {
+	Scenario
+	ProfileIDs          []string // explicit allowlist for named profiles
 	GroqAPIKey          string
 	ElevenAPIKey        string
 	ElevenVoiceID       string
@@ -164,14 +188,77 @@ func seconds(v string) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-func Load(path string) (*Config, error) {
+func Load(path string) (*Config, error) { return LoadProfile(path, "") }
+
+var profileIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
+
+// LoadProfile layers a named profile over the existing .env. The AGI argument
+// is only an ID from PROFILE_IDS; it can never supply a path. Profile files
+// always live next to the base .env, under profiles/<id>.env.
+func LoadProfile(path, id string) (*Config, error) {
+	cfg := &Config{Scenario: Scenario{SummaryEnabled: true, LogUtterances: true}}
+	if err := applyFile(cfg, path); err != nil {
+		return nil, err
+	}
+	if id == "" || id == "german" {
+		cfg.ProfileID = "german"
+		defaults(cfg)
+		return cfg, nil
+	}
+	if !profileIDPattern.MatchString(id) || !contains(cfg.ProfileIDs, id) {
+		return nil, fmt.Errorf("unknown profile %q", id)
+	}
+	// Scenario fields must be supplied by the named profile. In particular, a
+	// missing prompt must never silently turn a private call into the tutor.
+	cfg.SkillFile, cfg.SummarySkillFile, cfg.ThemesFile = "", "", ""
+	cfg.Language, cfg.STTLanguage = "", ""
+	cfg.CustomSTTLanguage = ""
+	cfg.NotifyWebhookURL, cfg.NotifyWebhookToken, cfg.SummaryPrefix = "", "", ""
+	cfg.GreetingPrompt, cfg.ThemePrompt, cfg.SilencePrompt = "", "", ""
+	cfg.SilenceLine, cfg.FarewellLine, cfg.GlitchLine, cfg.OutageLine = "", "", "", ""
+	cfg.FarewellPhrases = nil
+	cfg.HistoryRole = ""
+	cfg.SummaryEnabled = false
+	cfg.LogUtterances = false
+	profilePath := filepath.Join(filepath.Dir(path), "profiles", id+".env")
+	if err := applyFile(cfg, profilePath); err != nil {
+		return nil, err
+	}
+	cfg.ProfileID = id
+	if cfg.Language == "" {
+		return nil, fmt.Errorf("profile %q: LANGUAGE is required", id)
+	}
+	defaults(cfg)
+	if cfg.Language != "ru" && cfg.Language != "de" {
+		return nil, fmt.Errorf("profile %q: LANGUAGE must be de or ru", id)
+	}
+	if cfg.SkillFile == "" || cfg.GreetingPrompt == "" || cfg.SilencePrompt == "" || cfg.SilenceLine == "" || cfg.FarewellLine == "" || cfg.GlitchLine == "" || cfg.OutageLine == "" || cfg.HistoryRole == "" || len(cfg.FarewellPhrases) == 0 {
+		return nil, fmt.Errorf("profile %q: required scenario settings are missing", id)
+	}
+	if cfg.ThemesFile != "" && cfg.ThemePrompt == "" {
+		return nil, fmt.Errorf("profile %q: THEME_PROMPT required when THEMES_FILE is set", id)
+	}
+	if cfg.SummaryEnabled && cfg.SummarySkillFile == "" {
+		return nil, fmt.Errorf("profile %q: SUMMARY_SKILL_FILE required when summary is enabled", id)
+	}
+	return cfg, nil
+}
+
+func contains(items []string, item string) bool {
+	for _, candidate := range items {
+		if candidate == item {
+			return true
+		}
+	}
+	return false
+}
+
+func applyFile(cfg *Config, path string) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open env file %s: %w", path, err)
+		return fmt.Errorf("open env file %s: %w", path, err)
 	}
 	defer f.Close()
-
-	cfg := &Config{}
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
@@ -185,6 +272,36 @@ func Load(path string) (*Config, error) {
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
 		switch key {
+		case "PROFILE_IDS":
+			cfg.ProfileIDs = splitModels(val)
+		case "LANGUAGE":
+			cfg.Language = val
+		case "STT_LANGUAGE":
+			cfg.STTLanguage = val
+		case "GREETING_PROMPT":
+			cfg.GreetingPrompt = val
+		case "THEME_PROMPT":
+			cfg.ThemePrompt = val
+		case "SILENCE_PROMPT":
+			cfg.SilencePrompt = val
+		case "SILENCE_LINE":
+			cfg.SilenceLine = val
+		case "FAREWELL_LINE":
+			cfg.FarewellLine = val
+		case "GLITCH_LINE":
+			cfg.GlitchLine = val
+		case "OUTAGE_LINE":
+			cfg.OutageLine = val
+		case "FAREWELL_PHRASES":
+			cfg.FarewellPhrases = splitModels(val)
+		case "HISTORY_ROLE":
+			cfg.HistoryRole = val
+		case "SUMMARY_ENABLED":
+			cfg.SummaryEnabled = val == "true"
+		case "SUMMARY_PREFIX":
+			cfg.SummaryPrefix = val
+		case "LOG_UTTERANCES":
+			cfg.LogUtterances = val == "true"
 		case "GROQ_API_KEY":
 			cfg.GroqAPIKey = val
 		case "ELEVENLABS_API_KEY":
@@ -298,9 +415,12 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return nil, err
+		return err
 	}
+	return nil
+}
 
+func defaults(cfg *Config) {
 	// Defaults so the app runs with a minimal .env.
 	if cfg.LLMEngine == "" {
 		cfg.LLMEngine = "polza"
@@ -333,8 +453,14 @@ func Load(path string) (*Config, error) {
 	// STT defaults. German is spelled out rather than left to the endpoint so a
 	// different server gets told explicitly; CUSTOM_STT_LANGUAGE=auto omits the
 	// field and lets the endpoint decide.
+	if cfg.Language == "" {
+		cfg.Language = "de"
+	}
+	if cfg.STTLanguage == "" {
+		cfg.STTLanguage = cfg.Language
+	}
 	if cfg.CustomSTTLanguage == "" {
-		cfg.CustomSTTLanguage = "de"
+		cfg.CustomSTTLanguage = cfg.STTLanguage
 	}
 	// Longer than the self-hosted server's own 25s cut-off, so its error reaches
 	// the log instead of our own anonymous timeout.
@@ -358,5 +484,36 @@ func Load(path string) (*Config, error) {
 	if cfg.ClaudeMaxThinkingTokens == 0 {
 		cfg.ClaudeMaxThinkingTokens = 8192
 	}
-	return cfg, nil
+	if cfg.ProfileID == "german" {
+		if cfg.GreetingPrompt == "" {
+			cfg.GreetingPrompt = "Starte ein neues Gespräch. Begrüße den Anrufer und schlage ein Thema vor."
+		}
+		if cfg.ThemePrompt == "" {
+			cfg.ThemePrompt = "Starte ein neues Gespräch. Begrüße den Anrufer kurz und stelle ihm folgende Frage als Gesprächseinstieg: {theme}"
+		}
+		if cfg.SilencePrompt == "" {
+			cfg.SilencePrompt = "Der Nutzer hat nichts gesagt. Fordere ihn auf, etwas zu sagen."
+		}
+		if cfg.SilenceLine == "" {
+			cfg.SilenceLine = "Ich höre nichts. Sag bitte etwas!"
+		}
+		if cfg.FarewellLine == "" {
+			cfg.FarewellLine = "Tschüss! Bis zum nächsten Mal!"
+		}
+		if cfg.GlitchLine == "" {
+			cfg.GlitchLine = "Entschuldigung, ich habe gerade ein technisches Problem. Sag das bitte noch einmal."
+		}
+		if cfg.OutageLine == "" {
+			cfg.OutageLine = "Es tut mir leid, mein System antwortet im Moment nicht. Ruf bitte später noch einmal an. Tschüss!"
+		}
+		if len(cfg.FarewellPhrases) == 0 {
+			cfg.FarewellPhrases = []string{"tschüss", "tschüs", "tschuss", "auf wiedersehen", "auf wiederhören", "bye", "goodbye", "ciao", "bis bald", "bis dann", "mach's gut", "machs gut"}
+		}
+		if cfg.HistoryRole == "" {
+			cfg.HistoryRole = "Tutor"
+		}
+		if cfg.SummaryPrefix == "" {
+			cfg.SummaryPrefix = "Вот транскрипт разговора:\n\n"
+		}
+	}
 }
