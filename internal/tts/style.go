@@ -222,19 +222,34 @@ func dialectForModel(model string) Dialect {
 
 const grokGuide = `## Stimme und Emotion
 
-Deine Antwort geht an eine Sprachausgabe, die Regie-Tags versteht: sie werden
+Deine Antwort geht an Grok Voice, das nur die folgenden Regie-Tags versteht: sie werden
 nicht vorgelesen, sondern gespielt. **Setze in jede Antwort ein Tag** — zwei,
 wenn die Antwort wirklich zwei Momente hat, nie mehr als zwei. Eine Antwort
 ganz ohne Tag ist die Ausnahme, nicht die Regel: ohne Tag klingt deine Stimme
 flach, und genau das ist der Grund, warum es diesen Abschnitt gibt.
 
-Einzelne Laute, genau an der Stelle im Satz:
+Es gibt genau zwei Tag-Formen. Verwechsle ihre Klammern nicht:
+
+1. Einzelne Laute stehen in eckigen Klammern, ohne Schlusstag, genau an der Stelle im Satz:
 [pause] [long-pause] [laugh] [cry] [sob] [sigh] [cough] [throat-clear] [smack] [breath] [exhale] [inhale]
+Nur diese zwölf Laute dürfen in eckigen Klammern stehen.
 
-Ganze Passagen, Tag öffnen und wieder schließen:
-<soft> <loud> <shouting> <whisper> <high> <low> <slow> <fast> <singing> <sad> <angry> <happy>
+2. Die Sprechweise steht in spitzen Klammern und umschließt gesprochenen Text.
+Jedes öffnende Tag braucht das passende Schlusstag direkt nach der Passage:
+<soft>Text</soft> <loud>Text</loud> <shouting>Text</shouting> <whisper>Text</whisper>
+<high>Text</high> <low>Text</low> <slow>Text</slow> <fast>Text</fast>
+<singing>Text</singing> <sad>Text</sad> <angry>Text</angry> <happy>Text</happy>
+Ein solches Paar zählt als ein Tag. Es darf nie allein vor oder nach der Antwort stehen.
 
-So sieht das aus:
+Verboten sind insbesondere [soft], [/soft], [low], [slow] und [whisper].
+soft und low sind Sprechweisen: schreibe immer <soft>Text</soft> bzw. <low>Text</low>.
+Erfinde keine anderen Tags, auch nicht [thoughtful] oder [sarcastically].
+Ungültige Tags werden gelöscht; ihre Emotion kommt dann nicht beim Hörer an.
+
+Korrekte Beispiele, deren Text ohne Tags ebenfalls vollständig ist:
+<soft>Das klingt enttäuschend.</soft> Was hättest du dir von ihm gewünscht?
+<low>Du hast ihm also vertraut.</low> Woran hast du gemerkt, dass das ein Fehler war?
+<slow>Ein enttäuschender Abend erklärt noch nicht alles.</slow> Hast du ihn danach darauf angesprochen?
 Ach komm. [laugh] Das glaubst du doch selbst nicht. Was war wirklich los?
 <whisper>Das sage ich nur einmal.</whisper> Du windest dich. Warum eigentlich?
 
@@ -243,7 +258,12 @@ Regeln:
   Alles andere in eckigen oder spitzen Klammern wird vor der Ausgabe gelöscht.
 - Tags ersetzen keine Wörter: ohne sie muss der Satz vollständig dastehen.
 - Nie zwei Tags direkt hintereinander.
-- Deine Frage am Schluss bleibt normal gesprochen.`
+- Verschachtele keine Tags. Deine Frage am Schluss bleibt außerhalb der Tags und normal gesprochen.
+
+Prüfe vor der Ausgabe still: mindestens ein gültiges Tag, nur Namen aus diesen Listen,
+Laute in [eckigen Klammern], Sprechweisen ausschließlich als <name>Text</name> mit
+passendem Schlusstag. Korrigiere jeden Formatfehler, bevor du antwortest.
+Gib nur die fertige Antwort aus, ohne diese Prüfung zu erwähnen.`
 
 const geminiGuide = `## Stimme und Emotion
 
