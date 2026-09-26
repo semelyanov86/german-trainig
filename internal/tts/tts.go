@@ -3,7 +3,9 @@ package tts
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 	"strings"
+	"time"
 )
 
 type Synthesizer interface {
@@ -12,6 +14,7 @@ type Synthesizer interface {
 
 type Config struct {
 	SessionID           string
+	TempDir             string
 	ElevenAPIKey        string
 	ElevenVoiceID       string
 	ElevenModel         string
@@ -28,6 +31,14 @@ type Config struct {
 	OpenRouterTTSFormat string
 	StyleTags           string
 	LogUtterances       bool
+}
+
+func (c Config) audioBase() string {
+	dir := c.TempDir
+	if dir == "" {
+		dir = "/tmp"
+	}
+	return filepath.Join(dir, fmt.Sprintf("tts_%s_%d", c.SessionID, time.Now().UnixNano()))
 }
 
 // New builds the synthesizer for an engine together with the expression-tag

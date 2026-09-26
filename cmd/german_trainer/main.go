@@ -1,9 +1,12 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -22,11 +25,10 @@ import (
 )
 
 const (
-	maxTurns    = 25
-	maxRecordMs = 150000
-	silenceSec  = 5
-	logFile     = "/tmp/german_trainer.log"
-	envFile     = "/etc/german-trainer/.env"
+	maxTurns   = 25
+	silenceSec = 5
+	logFile    = "/tmp/german_trainer.log"
+	envFile    = "/etc/german-trainer/.env"
 	// Dedicated Asterisk MOH class for the "thinking" pause. It holds a pool of
 	// AI-generated calm instrumental tracks with sort=random, so each hold plays
 	// different music. Scoped to this app — the global "default" class is untouched.
@@ -62,7 +64,12 @@ var (
 )
 
 func main() {
-	profileID, err := selectedProfile(os.Args[1:])
+	args := os.Args[1:]
+	validateOnly := len(args) == 2 && args[0] == "--check-profile"
+	if validateOnly {
+		args = args[1:]
+	}
+	profileID, err := selectedProfile(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -71,6 +78,14 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config: %v\n", err)
 		os.Exit(1)
+	}
+	if validateOnly {
+		if err := validateProfile(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "profile validation: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("profile=%s language=%s max_record_seconds=%d summary_mode=%s\n", cfg.ProfileID, cfg.Language, cfg.MaxRecordSeconds, cfg.SummaryMode)
+		return
 	}
 
 	lf, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -92,6 +107,20 @@ func main() {
 		ch.Vars["agi_channel"], ch.Vars["agi_callerid"], cfg.TTSEngine, cfg.STTEngine)
 
 	sess := session.New(cfg.HistoryDir, logger)
+	if !cfg.LogUtterances {
+		sess, err = session.NewPrivate(cfg.HistoryDir, logger)
+		if err != nil {
+			logger.Printf("ERROR starting private session: %v", err)
+			return
+		}
+	}
+	defer sess.Cleanup()
+	if !cfg.LogUtterances {
+		logger.Println("Private session started")
+	}
+	if cfg.SummaryMode == "transcript_advice" {
+		sess.SpokenRole = cfg.HistoryRole
+	}
 	logger.Printf("Session %s, history: %s", sess.ID, sess.HistoryFile)
 	// Log the engine and model per task, and resolve the model the way the
 	// backend will: on the claude engine the per-task ids are ignored in favour
@@ -121,7 +150,6 @@ func main() {
 				logger.Printf("ERROR generating summary: %v", err)
 			}
 		}
-		sess.Cleanup()
 	}()
 
 	transcriber := stt.New(cfg.STTEngine, stt.Config{
@@ -141,6 +169,7 @@ func main() {
 	}, logger)
 	synthesizer, voice := tts.New(cfg.TTSEngine, tts.Config{
 		SessionID:           sess.ID,
+		TempDir:             sess.TempDir,
 		ElevenAPIKey:        cfg.ElevenAPIKey,
 		ElevenVoiceID:       cfg.ElevenVoiceID,
 		ElevenModel:         cfg.ElevenModel,
@@ -204,6 +233,9 @@ func main() {
 		playTTS(ch, sess, synthesizer, cfg.OutageLine, logger)
 		return
 	}
+	if cfg.GreetingNotice != "" {
+		greeting = cfg.GreetingNotice + " " + greeting
+	}
 	if cfg.LogUtterances {
 		logger.Printf("Greeting: %s", greeting)
 	}
@@ -213,7 +245,7 @@ func main() {
 	}
 
 	// Music keeps playing — playTTS stops it once the audio is synthesized.
-	sess.WriteHistory(cfg.HistoryRole, tts.PlainText(greeting))
+	writePreparedReply(sess, cfg.HistoryRole, greeting)
 	if !playTTS(ch, sess, synthesizer, greeting, logger) {
 		return
 	}
@@ -225,15 +257,14 @@ func main() {
 	for turn := 0; turn < maxTurns; turn++ {
 		logger.Printf("--- Turn %d ---", turn+1)
 
-		recFile := fmt.Sprintf("/tmp/user_%s_%d", sess.ID, turn)
+		recFile := filepath.Join(sess.TempDir, fmt.Sprintf("user_%s_%d", sess.ID, turn))
 		sess.AddTempFiles(recFile + ".wav")
 
-		resp := ch.Cmd(fmt.Sprintf("RECORD FILE %s wav \"#\" %d 0 s=%d", recFile, maxRecordMs, silenceSec))
-		if !ch.IsAlive() {
-			break
-		}
-		if res, ok := agi.Result(resp); ok && res == -1 {
+		resp := ch.Cmd(fmt.Sprintf("RECORD FILE %s wav \"#\" %d 0 s=%d", recFile, cfg.MaxRecordSeconds*1000, silenceSec))
+		res, _ := agi.Result(resp)
+		if !ch.IsAlive() || res == -1 {
 			logger.Println("Hangup during recording")
+			captureFinalUtterance(recFile+".wav", resp, cfg, transcriber, sess, logger)
 			break
 		}
 
@@ -248,6 +279,7 @@ func main() {
 		// the reply audio is ready and about to be streamed.
 		ch.Cmd("EXEC StartMusicOnHold " + mohClass)
 		if !ch.IsAlive() {
+			captureFinalUtterance(wavPath, resp, cfg, transcriber, sess, logger)
 			break
 		}
 
@@ -265,7 +297,9 @@ func main() {
 		userText, err := transcriber.Transcribe(wavPath)
 		if err != nil {
 			logger.Printf("ERROR transcribing: %v", err)
-			ch.Cmd("EXEC StopMusicOnHold")
+			if !playTTS(ch, sess, synthesizer, cfg.GlitchLine, logger) {
+				break
+			}
 			continue
 		}
 		userText = strings.TrimSpace(userText)
@@ -284,7 +318,7 @@ func main() {
 			logger.Printf("User said: %s", userText)
 		}
 
-		if farewell.ContainsForLanguage(userText, cfg.FarewellPhrases, cfg.Language) {
+		if isFarewell(userText, cfg) {
 			logger.Println("Farewell detected")
 			sess.WriteHistory("User", userText)
 			fw, err := dialog.Call(sess.ReadHistory(), userText)
@@ -292,7 +326,7 @@ func main() {
 				logger.Printf("WARN farewell reply unavailable (%v), using the fixed line", err)
 				fw = cfg.FarewellLine
 			}
-			sess.WriteHistory(cfg.HistoryRole, tts.PlainText(fw))
+			writePreparedReply(sess, cfg.HistoryRole, fw)
 			playTTS(ch, sess, synthesizer, fw, logger)
 			break
 		}
@@ -325,7 +359,7 @@ func main() {
 			break
 		}
 
-		sess.WriteHistory(cfg.HistoryRole, tts.PlainText(response))
+		writePreparedReply(sess, cfg.HistoryRole, response)
 		if !playTTS(ch, sess, synthesizer, response, logger) {
 			break
 		}
@@ -334,6 +368,89 @@ func main() {
 	logger.Println("Session ending")
 	if ch.IsAlive() {
 		ch.Cmd("HANGUP")
+	}
+}
+
+func validateProfile(cfg *config.Config) error {
+	paths := []string{cfg.SkillFile}
+	if cfg.SummaryEnabled {
+		paths = append(paths, cfg.SummarySkillFile)
+	}
+	for _, path := range paths {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(skill.ExtractContent(string(content))) == "" {
+			return fmt.Errorf("empty prompt file")
+		}
+	}
+	return nil
+}
+
+// A hangup still leaves the final recording available. Capture it for the
+// written report without issuing more commands or generating a spoken reply.
+func captureFinalUtterance(path, reply string, cfg *config.Config, transcriber stt.Transcriber, sess *session.Session, logger *log.Logger) {
+	if cfg.SummaryMode != "transcript_advice" {
+		return
+	}
+	if n, ok := agi.Endpos(reply); ok {
+		if n < minSpeechSamples {
+			return
+		}
+	} else if wavSamples(path) < minSpeechSamples {
+		return
+	}
+	text, err := transcriber.Transcribe(path)
+	if err != nil {
+		logger.Printf("ERROR transcribing final recording: %v", err)
+		return
+	}
+	text = strings.TrimSpace(text)
+	if text != "" && hasSpeechScript(text, cfg.Language) {
+		sess.WriteHistory("User", text)
+	}
+}
+
+// WAV chunk headers give us a silence-duration guard even when a hangup leaves
+// no RECORD response/endpos. Asterisk produces 8kHz mono signed 16-bit PCM.
+func wavSamples(path string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	var header [12]byte
+	if _, err := io.ReadFull(f, header[:]); err != nil || string(header[:4]) != "RIFF" || string(header[8:]) != "WAVE" {
+		return 0
+	}
+	for {
+		var chunk [8]byte
+		if _, err := io.ReadFull(f, chunk[:]); err != nil {
+			return 0
+		}
+		size := int64(binary.LittleEndian.Uint32(chunk[4:]))
+		if string(chunk[:4]) == "data" {
+			position, _ := f.Seek(0, io.SeekCurrent)
+			info, err := f.Stat()
+			if err != nil {
+				return 0
+			}
+			available := info.Size() - position
+			if size > available {
+				size = available
+			}
+			return int(size / 2)
+		}
+		if _, err := f.Seek(size+size%2, io.SeekCurrent); err != nil {
+			return 0
+		}
+	}
+}
+
+func writePreparedReply(sess *session.Session, role, text string) {
+	if sess.SpokenRole == "" {
+		sess.WriteHistory(role, tts.PlainText(text))
 	}
 }
 
@@ -353,7 +470,15 @@ func newSummarizer(cfg *config.Config, prompt string, logger *log.Logger) *summa
 		return nil
 	}
 	provider := llm.New(summarySpec(cfg), logger)
-	return summary.NewWithPolicy(provider, prompt, cfg.NotifyWebhookURL, cfg.NotifyWebhookToken, cfg.SummaryPrefix, cfg.LogUtterances, logger)
+	return summary.NewWithReportPolicy(provider, prompt, cfg.NotifyWebhookURL, cfg.NotifyWebhookToken,
+		summary.Policy{Mode: cfg.SummaryMode, Prefix: cfg.SummaryPrefix, LogContent: cfg.LogUtterances}, logger)
+}
+
+func isFarewell(text string, cfg *config.Config) bool {
+	if cfg.FarewellMode == "utterance" {
+		return farewell.IsUtterance(text, cfg.FarewellPhrases)
+	}
+	return farewell.ContainsForLanguage(text, cfg.FarewellPhrases, cfg.Language)
 }
 
 func baseLLMSpec(cfg *config.Config) llm.Spec {
@@ -436,7 +561,7 @@ func promptForSpeech(ch *agi.Channel, sess *session.Session, synth tts.Synthesiz
 		logger.Printf("WARN nudge unavailable (%v), using the fixed line", err)
 		line = cfg.SilenceLine
 	}
-	sess.WriteHistory(cfg.HistoryRole, tts.PlainText(line))
+	writePreparedReply(sess, cfg.HistoryRole, line)
 	return playTTS(ch, sess, synth, line, logger)
 }
 
@@ -470,12 +595,18 @@ func loadPrompt(path string, logger *log.Logger) string {
 // stop is unconditional so the music never survives a synthesis failure.
 func playTTS(ch *agi.Channel, sess *session.Session, synth tts.Synthesizer, text string, logger *log.Logger) bool {
 	wavPath, tmpFiles, err := synth.Synthesize(text)
+	sess.AddTempFiles(tmpFiles...)
 	ch.Cmd("EXEC StopMusicOnHold")
 	if err != nil {
 		logger.Printf("ERROR synthesizing: %v", err)
 		return ch.IsAlive()
 	}
-	sess.AddTempFiles(tmpFiles...)
-	ch.PlayAudio(wavPath)
+	if !ch.IsAlive() {
+		return false
+	}
+	reply := ch.PlayAudio(wavPath)
+	if result, ok := agi.Result(reply); sess.SpokenRole != "" && ok && result >= 0 {
+		sess.WriteHistory(sess.SpokenRole, tts.PlainText(text))
+	}
 	return ch.IsAlive()
 }

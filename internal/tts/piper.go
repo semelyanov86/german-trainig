@@ -16,7 +16,7 @@ type PiperSynth struct {
 func (p *PiperSynth) Synthesize(text string) (string, []string, error) {
 	start := time.Now()
 
-	outFile := fmt.Sprintf("/tmp/tts_%s_%d.wav", p.cfg.SessionID, time.Now().UnixNano())
+	outFile := p.cfg.audioBase() + ".wav"
 
 	cmd := exec.Command("piper", "--model", p.cfg.PiperModel, "--output_file", outFile)
 	cmd.Stdin = strings.NewReader(text)

@@ -41,3 +41,18 @@ func TestSafeFailureKinds(t *testing.T) {
 		t.Fatalf("private error payload leaked: %q", got)
 	}
 }
+
+func TestPrivateProgressContainsNoPayload(t *testing.T) {
+	var out bytes.Buffer
+	l := log.New(Writer{Output: &out, ProfileID: "psychologist"}, "", log.LstdFlags)
+	l.Println("Private session started")
+	l.Println("Summary: generated 900 chars")
+	l.Println("Summary: webhook sent, status 204")
+	l.Println("Cleanup complete")
+	l.Println("Summary: webhook sent, status 204 token=secret")
+	l.Println("User said: личное сообщение")
+	got := out.String()
+	if strings.Count(got, "profile=psychologist:") != 4 || strings.Contains(got, "secret") || strings.Contains(got, "личное") {
+		t.Fatalf("unsafe progress diagnostics: %q", got)
+	}
+}

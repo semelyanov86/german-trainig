@@ -60,7 +60,7 @@ func (p *PolzaSynth) Synthesize(text string) (string, []string, error) {
 		return "", nil, fmt.Errorf("polza tts: empty audio in response")
 	}
 
-	mp3File := fmt.Sprintf("/tmp/tts_%s_%d.mp3", p.cfg.SessionID, time.Now().UnixNano())
+	mp3File := p.cfg.audioBase() + ".mp3"
 
 	if strings.HasPrefix(result.Audio, "http://") || strings.HasPrefix(result.Audio, "https://") {
 		// Audio field is a URL — download it

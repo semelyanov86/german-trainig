@@ -12,6 +12,14 @@ User calls → Asterisk AGI → STT (Groq/polza/openrouter) → LLM (polza/openr
 
 ## Prerequisites
 
+Russian psychological support is available as a separate `psychologist`
+profile on extension **777** in the production Ansible dialplan. It allows
+caller utterances up to seven minutes, uses independent model settings, and
+sends a recognized transcript with brief written advice plus the call recording.
+See [conversation profiles](docs/profiles.md) and
+[profile configuration](profiles/psychologist.env.example). Extension 555 keeps
+the existing German tutor behavior.
+
 - Ubuntu server with Asterisk 13+
 - Go 1.18+
 - [Codex CLI](https://developers.openai.com/codex/cli) or [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated as `sergey` when using the respective CLI engine

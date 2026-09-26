@@ -59,3 +59,23 @@ func ContainsForLanguage(text string, phrases []string, language string) bool {
 	}
 	return false
 }
+
+// IsUtterance matches a whole closing utterance, rather than a goodbye quoted
+// within a story. Negations, quoted speech and long monologues cannot hang up.
+func IsUtterance(text string, phrases []string) bool {
+	if strings.ContainsAny(text, "\"«»“”") {
+		return false
+	}
+	normalize := func(s string) string {
+		return strings.Join(strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsPunct(r)
+		}), " ")
+	}
+	closing := normalize(text)
+	for _, phrase := range phrases {
+		if closing != "" && closing == normalize(phrase) {
+			return true
+		}
+	}
+	return false
+}

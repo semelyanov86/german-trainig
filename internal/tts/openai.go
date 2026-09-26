@@ -41,7 +41,7 @@ func (o *OpenAISynth) Synthesize(text string) (string, []string, error) {
 		return "", nil, fmt.Errorf("openai tts HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	mp3File := fmt.Sprintf("/tmp/tts_%s_%d.mp3", o.cfg.SessionID, time.Now().UnixNano())
+	mp3File := o.cfg.audioBase() + ".mp3"
 	out, err := os.Create(mp3File)
 	if err != nil {
 		return "", nil, fmt.Errorf("create mp3: %w", err)

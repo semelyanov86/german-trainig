@@ -11,8 +11,11 @@ import (
 type Session struct {
 	ID          string
 	HistoryFile string
+	TempDir     string
+	SpokenRole  string // optional: record only successfully played assistant lines
 	tempFiles   []string
 	logger      *log.Logger
+	privateDir  bool
 }
 
 func New(historyDir string, logger *log.Logger) *Session {
@@ -20,8 +23,23 @@ func New(historyDir string, logger *log.Logger) *Session {
 	return &Session{
 		ID:          id,
 		HistoryFile: filepath.Join(historyDir, fmt.Sprintf("history_%s.txt", id)),
+		TempDir:     "/tmp",
 		logger:      logger,
 	}
+}
+
+// NewPrivate isolates transcripts and all temporary audio from other users.
+// The directory is also the cleanup boundary for partial provider output.
+func NewPrivate(historyDir string, logger *log.Logger) (*Session, error) {
+	dir, err := os.MkdirTemp(historyDir, "session_")
+	if err != nil {
+		return nil, fmt.Errorf("create private session directory: %w", err)
+	}
+	s := New(historyDir, logger)
+	s.TempDir = dir
+	s.HistoryFile = filepath.Join(dir, "history.txt")
+	s.privateDir = true
+	return s, nil
 }
 
 func (s *Session) AddTempFiles(files ...string) {
@@ -48,6 +66,13 @@ func (s *Session) ReadHistory() string {
 
 func (s *Session) Cleanup() {
 	s.logger.Println("Cleaning up session files...")
+	if s.privateDir {
+		if err := os.RemoveAll(s.TempDir); err != nil {
+			s.logger.Printf("ERROR cleaning private session: %v", err)
+		}
+		s.logger.Println("Cleanup complete")
+		return
+	}
 	os.Remove(s.HistoryFile)
 	for _, f := range s.tempFiles {
 		os.Remove(f)

@@ -42,7 +42,7 @@ func (e *ElevenLabsSynth) Synthesize(text string) (string, []string, error) {
 		return "", nil, fmt.Errorf("elevenlabs HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	mp3File := fmt.Sprintf("/tmp/tts_%s_%d.mp3", e.cfg.SessionID, time.Now().UnixNano())
+	mp3File := e.cfg.audioBase() + ".mp3"
 	out, err := os.Create(mp3File)
 	if err != nil {
 		return "", nil, fmt.Errorf("create mp3: %w", err)

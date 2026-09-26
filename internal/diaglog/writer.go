@@ -11,6 +11,7 @@ import (
 var httpStatus = regexp.MustCompile(`\bHTTP ([1-5][0-9][0-9])\b`)
 var sttFallbackAttempt = regexp.MustCompile(`(?s)\bWARN (Custom|Groq|Polza|OpenRouter) STT failed .*falling back to (Custom|Groq|Polza|OpenRouter)\s*$`)
 var sttFallbackAnswered = regexp.MustCompile(`\b(Custom|Groq|Polza|OpenRouter) STT answered instead of (Custom|Groq|Polza|OpenRouter)\s*$`)
+var safeProgress = regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} (Summary: generated \d+ chars|Summary: webhook sent, status 2\d\d|Cleanup complete|Private session started)\n$`)
 
 // Writer is the final log boundary for a private profile. Provider errors may
 // contain response bodies, URLs or CLI stderr, so no original line passes.
@@ -21,6 +22,10 @@ type Writer struct {
 
 func (w Writer) Write(p []byte) (int, error) {
 	line := string(p)
+	if match := safeProgress.FindStringSubmatch(line); len(match) == 2 {
+		_, err := fmt.Fprintf(w.Output, "%s profile=%s: %s\n", time.Now().Format("2006/01/02 15:04:05"), w.ProfileID, match[1])
+		return len(p), err
+	}
 	if m := sttFallbackAnswered.FindStringSubmatch(line); len(m) == 3 {
 		_, err := fmt.Fprintf(w.Output, "%s profile=%s: STT fallback primary=%s fallback=%s outcome=answered\n", time.Now().Format("2006/01/02 15:04:05"), w.ProfileID, m[2], m[1])
 		return len(p), err

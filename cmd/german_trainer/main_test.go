@@ -1,12 +1,88 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
 	"io"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"german-trainer/internal/agi"
 	"german-trainer/internal/config"
+	"german-trainer/internal/session"
 )
+
+type finalTranscriber struct {
+	text  string
+	calls int
+}
+
+func (s *finalTranscriber) Transcribe(string) (string, error) {
+	s.calls++
+	return s.text, nil
+}
+
+func TestFinalHangupRecordingIsIncludedWithSpeechGuards(t *testing.T) {
+	logger := log.New(io.Discard, "", 0)
+	cfg := &config.Config{Scenario: config.Scenario{Language: "ru", SummaryMode: "transcript_advice"}}
+	for _, tc := range []struct {
+		samples     int
+		text, reply string
+		want        bool
+	}{
+		{16000, "Я потерял работу и хочу об этом поговорить.", "", true},
+		{16000, "Мне тяжело.", "200 result=-1 endpos=16000", true},
+		{8000, "выдуманные слова", "", false},
+		{16000, "", "", false},
+		{16000, "다섯", "", false},
+	} {
+		var wav bytes.Buffer
+		wav.WriteString("RIFF")
+		binary.Write(&wav, binary.LittleEndian, uint32(12+tc.samples*2))
+		wav.WriteString("WAVEdata")
+		binary.Write(&wav, binary.LittleEndian, uint32(tc.samples*2))
+		wav.Write(make([]byte, tc.samples*2))
+		path := filepath.Join(t.TempDir(), "last.wav")
+		os.WriteFile(path, wav.Bytes(), 0600)
+		sess := session.New(t.TempDir(), logger)
+		tr := &finalTranscriber{text: tc.text}
+		captureFinalUtterance(path, tc.reply, cfg, tr, sess, logger)
+		if got := strings.Contains(sess.ReadHistory(), "User: "); got != tc.want {
+			t.Errorf("final utterance captured=%v, want %v for %+v", got, tc.want, tc)
+		}
+		if tc.samples < minSpeechSamples && tr.calls != 0 {
+			t.Fatal("short noise reached STT")
+		}
+	}
+}
+
+type playbackSynth struct{ err error }
+
+func (s playbackSynth) Synthesize(string) (string, []string, error) {
+	return "/tmp/test-playback.wav", nil, s.err
+}
+
+func TestSpokenTranscriptIncludesOnlyPlayedReplies(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		logger := log.New(io.Discard, "", 0)
+		sess := session.New(t.TempDir(), logger)
+		sess.SpokenRole = "Психолог"
+		var sent bytes.Buffer
+		ch := agi.NewChannel(strings.NewReader("200 result=0\n200 result=0\n"), &sent, logger)
+		synth := playbackSynth{}
+		if fail {
+			synth.err = errors.New("unavailable")
+		}
+		playTTS(ch, sess, synth, "<soft>Повторите, пожалуйста.</soft>", logger)
+		if got := sess.ReadHistory(); (!fail && got != "Психолог: Повторите, пожалуйста.\n") || (fail && got != "") {
+			t.Errorf("incorrect spoken transcript: %q, synth failed=%v", got, fail)
+		}
+	}
+}
 
 func TestProfileSelectionAndSpeechGuard(t *testing.T) {
 	if id, err := selectedProfile(nil); err != nil || id != "" {
@@ -34,6 +110,30 @@ func TestProfileSelectionAndSpeechGuard(t *testing.T) {
 		if got := hasSpeechScript(tc.text, tc.lang); got != tc.want {
 			t.Errorf("hasSpeechScript(%q,%q)=%v, want %v", tc.text, tc.lang, got, tc.want)
 		}
+	}
+}
+
+func TestPsychologistFarewellDoesNotInterruptStories(t *testing.T) {
+	cfg := &config.Config{Scenario: config.Scenario{Language: "ru", FarewellMode: "utterance", FarewellPhrases: []string{"до свидания", "спасибо до свидания"}}}
+	for _, tc := range []struct {
+		text string
+		want bool
+	}{
+		{"До свидания!", true},
+		{"Спасибо, до свидания.", true},
+		{"Начальник сказал до свидания, и я потерял работу.", false},
+		{"Я не хочу говорить до свидания.", false},
+		{"«До свидания»", false},
+		{"Сейчас причиню себе вред. До свидания.", false},
+		{"Мне пока плохо, не знаю, что делать.", false},
+	} {
+		if got := isFarewell(tc.text, cfg); got != tc.want {
+			t.Errorf("isFarewell(%q)=%v, want %v", tc.text, got, tc.want)
+		}
+	}
+	legacy := &config.Config{Scenario: config.Scenario{Language: "de", FarewellPhrases: []string{"tschüss"}}}
+	if !isFarewell("Okay, tschüss!", legacy) {
+		t.Fatal("German farewell behavior changed")
 	}
 }
 

@@ -54,7 +54,7 @@ func (o *OpenRouterSynth) Synthesize(text string) (string, []string, error) {
 		return "", nil, fmt.Errorf("openrouter tts HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	base := fmt.Sprintf("/tmp/tts_%s_%d", o.cfg.SessionID, time.Now().UnixNano())
+	base := o.cfg.audioBase()
 	ct := resp.Header.Get("Content-Type")
 
 	// The endpoint returns one of three shapes depending on the model:

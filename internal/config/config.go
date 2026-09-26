@@ -14,21 +14,25 @@ import (
 // Scenario holds the conversation and privacy policy of one profile. The
 // provider configuration below is shared machinery, layered from .env files.
 type Scenario struct {
-	ProfileID       string
-	Language        string // de or ru: service prompts, transcript guard and TTS guide
-	STTLanguage     string // hosted STT; custom uses CUSTOM_STT_LANGUAGE when set
-	GreetingPrompt  string
-	ThemePrompt     string // {theme} is replaced with the selected theme
-	SilencePrompt   string
-	SilenceLine     string
-	FarewellLine    string
-	GlitchLine      string
-	OutageLine      string
-	FarewellPhrases []string
-	HistoryRole     string
-	SummaryEnabled  bool
-	SummaryPrefix   string
-	LogUtterances   bool
+	ProfileID        string
+	Language         string // de or ru: service prompts, transcript guard and TTS guide
+	STTLanguage      string // hosted STT; custom uses CUSTOM_STT_LANGUAGE when set
+	GreetingPrompt   string
+	GreetingNotice   string // fixed caller disclosure, spoken before generated greeting
+	ThemePrompt      string // {theme} is replaced with the selected theme
+	SilencePrompt    string
+	SilenceLine      string
+	FarewellLine     string
+	GlitchLine       string
+	OutageLine       string
+	FarewellPhrases  []string
+	HistoryRole      string
+	SummaryEnabled   bool
+	SummaryPrefix    string
+	LogUtterances    bool
+	MaxRecordSeconds int    // maximum length of one caller utterance
+	SummaryMode      string // analysis or transcript_advice
+	FarewellMode     string // phrase or utterance
 }
 
 type Config struct {
@@ -220,11 +224,14 @@ func LoadProfile(path, id string) (*Config, error) {
 	cfg.CustomSTTLanguage = ""
 	cfg.NotifyWebhookURL, cfg.NotifyWebhookToken, cfg.SummaryPrefix = "", "", ""
 	cfg.GreetingPrompt, cfg.ThemePrompt, cfg.SilencePrompt = "", "", ""
+	cfg.GreetingNotice = ""
 	cfg.SilenceLine, cfg.FarewellLine, cfg.GlitchLine, cfg.OutageLine = "", "", "", ""
 	cfg.FarewellPhrases = nil
 	cfg.HistoryRole = ""
 	cfg.SummaryEnabled = false
 	cfg.LogUtterances = false
+	cfg.MaxRecordSeconds = 0
+	cfg.SummaryMode, cfg.FarewellMode = "", ""
 	profilePath := filepath.Join(filepath.Dir(path), "profiles", id+".env")
 	if err := applyFile(cfg, profilePath); err != nil {
 		return nil, err
@@ -285,6 +292,8 @@ func applyFile(cfg *Config, path string) error {
 			cfg.STTLanguage = val
 		case "GREETING_PROMPT":
 			cfg.GreetingPrompt = val
+		case "GREETING_NOTICE":
+			cfg.GreetingNotice = val
 		case "THEME_PROMPT":
 			cfg.ThemePrompt = val
 		case "SILENCE_PROMPT":
@@ -307,6 +316,22 @@ func applyFile(cfg *Config, path string) error {
 			cfg.SummaryPrefix = val
 		case "LOG_UTTERANCES":
 			cfg.LogUtterances = val == "true"
+		case "MAX_RECORD_SECONDS":
+			n, err := strconv.Atoi(val)
+			if err != nil || n < 1 || n > 900 {
+				return fmt.Errorf("MAX_RECORD_SECONDS must be an integer between 1 and 900")
+			}
+			cfg.MaxRecordSeconds = n
+		case "SUMMARY_MODE":
+			if val != "analysis" && val != "transcript_advice" {
+				return fmt.Errorf("SUMMARY_MODE must be analysis or transcript_advice")
+			}
+			cfg.SummaryMode = val
+		case "FAREWELL_MODE":
+			if val != "phrase" && val != "utterance" {
+				return fmt.Errorf("FAREWELL_MODE must be phrase or utterance")
+			}
+			cfg.FarewellMode = val
 		case "GROQ_API_KEY":
 			cfg.GroqAPIKey = val
 		case "ELEVENLABS_API_KEY":
@@ -430,6 +455,15 @@ func applyFile(cfg *Config, path string) error {
 }
 
 func defaults(cfg *Config) {
+	if cfg.MaxRecordSeconds == 0 {
+		cfg.MaxRecordSeconds = 150
+	}
+	if cfg.SummaryMode == "" {
+		cfg.SummaryMode = "analysis"
+	}
+	if cfg.FarewellMode == "" {
+		cfg.FarewellMode = "phrase"
+	}
 	if cfg.CodexBin == "" {
 		cfg.CodexBin = "/usr/local/bin/codex"
 	}

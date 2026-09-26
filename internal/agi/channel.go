@@ -109,9 +109,9 @@ func numField(resp, name string) (int, bool) {
 	return n, true
 }
 
-func (c *Channel) PlayAudio(wavPath string) {
+func (c *Channel) PlayAudio(wavPath string) string {
 	base := strings.TrimSuffix(wavPath, ".wav")
-	c.Cmd(fmt.Sprintf("STREAM FILE %s \"\"", base))
+	return c.Cmd(fmt.Sprintf("STREAM FILE %s \"\"", base))
 }
 
 func (c *Channel) IsAlive() bool {

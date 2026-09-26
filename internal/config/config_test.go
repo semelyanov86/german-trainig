@@ -82,3 +82,46 @@ func write(t *testing.T, path, data string) {
 		t.Fatal(err)
 	}
 }
+
+func TestPsychologistConfigurationIsIndependent(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, ".env")
+	write(t, base, "PROFILE_IDS=psychologist\nLLM_ENGINE=codex\nLLM_MODEL=trainer-model\nLLM_SUMMARY_MODEL=trainer-summary\nMAX_RECORD_SECONDS=120\n")
+	example, err := os.ReadFile("../../profiles/psychologist.env.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "profiles", "psychologist.env"), string(example)+"\nLLM_MODEL=psychologist-model\nLLM_SUMMARY_MODEL=psychologist-summary\n")
+	psychologist, err := LoadProfile(base, "psychologist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if psychologist.MaxRecordSeconds != 420 || psychologist.SummaryMode != "transcript_advice" || psychologist.FarewellMode != "utterance" || psychologist.Language != "ru" || psychologist.STTLanguage != "ru" || psychologist.CustomSTTLanguage != "ru" {
+		t.Fatalf("incorrect psychologist behavior: %+v", psychologist.Scenario)
+	}
+	if psychologist.LogUtterances || !psychologist.SummaryEnabled || psychologist.GreetingNotice == "" || psychologist.TTSStyleTags != "auto" || psychologist.LLMModel != "psychologist-model" || psychologist.LLMSummaryModel != "psychologist-summary" {
+		t.Fatal("independent model, notice, style or reporting policy ignored")
+	}
+	trainer, err := Load(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trainer.LLMModel != "trainer-model" || trainer.LLMSummaryModel != "trainer-summary" || trainer.MaxRecordSeconds != 120 || trainer.SummaryMode != "analysis" || trainer.FarewellMode != "phrase" {
+		t.Fatal("psychologist configuration affected the German trainer")
+	}
+	write(t, base, "")
+	legacy, err := Load(base)
+	if err != nil || legacy.MaxRecordSeconds != 150 {
+		t.Fatalf("legacy recording limit changed: %v", err)
+	}
+}
+
+func TestRejectInvalidConversationPolicy(t *testing.T) {
+	for _, env := range []string{"MAX_RECORD_SECONDS=0", "MAX_RECORD_SECONDS=-1", "MAX_RECORD_SECONDS=901", "MAX_RECORD_SECONDS=9999999999999999999999999", "MAX_RECORD_SECONDS=seven", "SUMMARY_MODE=unknown", "FAREWELL_MODE=unknown"} {
+		path := filepath.Join(t.TempDir(), ".env")
+		write(t, path, env)
+		if _, err := Load(path); err == nil {
+			t.Errorf("accepted invalid configuration: %s", env)
+		}
+	}
+}
