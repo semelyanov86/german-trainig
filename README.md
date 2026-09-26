@@ -7,14 +7,14 @@ deployment are managed by Ansible.
 Asterisk AGI application for practicing spoken German through phone calls.
 
 ```
-User calls → Asterisk AGI → STT (Groq/polza/openrouter) → LLM (polza/openrouter/Claude CLI) → TTS (polza/openrouter/OpenAI/ElevenLabs/Piper) → audio back to user
+User calls → Asterisk AGI → STT (Groq/polza/openrouter) → LLM (polza/openrouter/Claude CLI/Codex CLI) → TTS (polza/openrouter/OpenAI/ElevenLabs/Piper) → audio back to user
 ```
 
 ## Prerequisites
 
 - Ubuntu server with Asterisk 13+
 - Go 1.18+
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
+- [Codex CLI](https://developers.openai.com/codex/cli) or [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated as `sergey` when using the respective CLI engine
 - ffmpeg
 - [Task](https://taskfile.dev) runner
 - [Piper TTS](https://github.com/rhasspy/piper) (optional, for local TTS)
@@ -45,6 +45,7 @@ internal/
     polza.go                  — LLM via polza.ai
     openrouter.go             — LLM via openrouter.ai
     claude.go                 — LLM via Claude CLI
+    codex.go                  — LLM via Codex CLI (GPT-6 Luna)
   session/session.go          — call session, history, cleanup
   skill/skill.go              — skill file frontmatter parser
   farewell/farewell.go        — farewell phrase detection
@@ -255,9 +256,37 @@ Edit `LLM_ENGINE` in `/etc/german-trainer/.env`:
 | `polza` | polza.ai | OpenAI-compatible chat. Model via `LLM_MODEL` / `LLM_SUMMARY_MODEL`, key `POLZA_API_KEY`. Default `openai/gpt-5.4-mini` (dialog) |
 | `openrouter` | openrouter.ai | OpenAI-compatible chat. Same model keys, key `OPENROUTER_API_KEY`. Default `mistralai/mistral-medium-3-5` |
 | `claude` | Claude Code CLI | Runs the local CLI as a subprocess. Uses `CLAUDE_MODEL` and **ignores** `LLM_MODEL` / `LLM_SUMMARY_MODEL` |
+| `codex` | Codex CLI | Uses `LLM_MODEL` / `LLM_SUMMARY_MODEL` (default `gpt-6-luna`) and each task's `REASONING` |
 
 The dialog and the post-call report pick their engine independently:
 `LLM_DIALOG_ENGINE` and `LLM_SUMMARY_ENGINE` override `LLM_ENGINE` when set.
+
+To use GPT-6 Luna for both conversation and reports:
+
+```bash
+LLM_ENGINE=codex
+LLM_DIALOG_ENGINE=codex
+LLM_SUMMARY_ENGINE=codex
+LLM_MODEL=gpt-6-luna
+LLM_SUMMARY_MODEL=gpt-6-luna
+LLM_DIALOG_REASONING=low
+LLM_SUMMARY_REASONING=medium
+CODEX_BIN=/usr/local/bin/codex
+CODEX_RUNNER=/usr/local/libexec/german-trainer-codex
+```
+
+In production these settings belong in `vault_german_trainer_env` in the
+Ansible repository. The `german_trainer` role provides the Codex entrypoint
+and a validated sudoers rule for `asterisk` to run its timeout wrapper as `sergey`. Authenticate
+Codex as `sergey` first (`codex login`, then `codex login status`).
+
+Codex runs in `exec` mode with user config ignored, no shell or web tools,
+and ephemeral sessions. The application sends prompts and role-preserving
+messages through stdin and reads only the final reply of a completed turn
+from JSON events. The dialog deadline is 20 seconds; the report deadline is
+180 seconds. Failure or empty output reaches the existing spoken fallback.
+Codex uses the CLI's output limit and has no application-level retry or model
+fallback; `TEMPERATURE`, `MAX_TOKENS` and `RETRIES` apply to HTTP providers.
 
 Example — fast HTTP model on the call, Claude CLI for the report:
 ```bash

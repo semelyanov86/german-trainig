@@ -362,6 +362,8 @@ func baseLLMSpec(cfg *config.Config) llm.Spec {
 		PolzaAPIKey:             cfg.PolzaAPIKey,
 		OpenRouterAPIKey:        cfg.OpenRouterAPIKey,
 		ClaudeBin:               cfg.ClaudeBin,
+		CodexBin:                cfg.CodexBin,
+		CodexRunner:             cfg.CodexRunner,
 		WorkDir:                 cfg.HistoryDir,
 		ClaudeMaxOutputTokens:   cfg.ClaudeMaxOutputTokens,
 		ClaudeMaxThinkingTokens: cfg.ClaudeMaxThinkingTokens,

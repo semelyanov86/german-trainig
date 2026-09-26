@@ -30,6 +30,7 @@ const (
 	EnginePolza      = "polza"
 	EngineOpenRouter = "openrouter"
 	EngineClaude     = "claude"
+	EngineCodex      = "codex"
 )
 
 // RetryPolicy bounds the automatic retries of a temporary provider failure
@@ -71,8 +72,8 @@ func (r RetryPolicy) withDefaults() RetryPolicy {
 // Optional fields (Temperature, Reasoning, MaxTokens) are sent to the backend
 // only when set, so the same code works for both reasoning and plain models.
 type Spec struct {
-	Engine      string // EnginePolza (default), EngineOpenRouter or EngineClaude
-	Model       string // provider-specific model id (used by polza and openrouter)
+	Engine      string // EnginePolza (default), EngineOpenRouter, EngineClaude or EngineCodex
+	Model       string // provider-specific model id (used by polza, openrouter and codex)
 	ClaudeModel string // model id passed to the Claude CLI (used by claude)
 	Temperature string // optional; sent only if a valid float (some models reject it)
 	Reasoning   string // optional reasoning effort: minimal|low|medium|high
@@ -94,6 +95,8 @@ type Spec struct {
 	PolzaAPIKey      string
 	OpenRouterAPIKey string
 	ClaudeBin        string
+	CodexBin         string
+	CodexRunner      string
 	WorkDir          string
 
 	// Claude CLI run settings (see config.Config); zero values are omitted.
@@ -107,6 +110,8 @@ func New(s Spec, logger *log.Logger) Provider {
 	switch s.Engine {
 	case EngineClaude:
 		return newClaude(s, logger)
+	case EngineCodex:
+		return newCodex(s, logger)
 	case EngineOpenRouter:
 		return newOpenRouter(s, logger)
 	default:

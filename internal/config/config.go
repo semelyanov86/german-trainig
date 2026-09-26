@@ -48,6 +48,8 @@ type Config struct {
 	SkillFile           string
 	SummarySkillFile    string
 	ClaudeBin           string
+	CodexBin            string
+	CodexRunner         string
 	HistoryDir          string
 	NotifyWebhookURL    string
 	NotifyWebhookToken  string
@@ -83,7 +85,7 @@ type Config struct {
 	// LLM provider selection and per-task model settings. LLM_ENGINE sets the
 	// baseline; LLM_DIALOG_ENGINE / LLM_SUMMARY_ENGINE override it per task, so
 	// the dialog can run on one provider and the post-call report on another.
-	LLMEngine             string // "polza" (default), "openrouter" or "claude"
+	LLMEngine             string // "polza" (default), "openrouter", "claude" or "codex"
 	LLMDialogEngine       string // optional override for the dialog
 	LLMSummaryEngine      string // optional override for the summary
 	LLMModel              string // dialog model id
@@ -138,8 +140,11 @@ var defaultOpenRouterFallbacks = []string{
 }
 
 // defaultModel picks the built-in model id for an engine. The claude backend
-// ignores it (it runs CLAUDE_MODEL), so only the HTTP backends need a value.
+// ignores it (it runs CLAUDE_MODEL); Codex uses the per-task model ids.
 func defaultModel(engine, polzaModel string) string {
+	if engine == "codex" {
+		return "gpt-6-luna"
+	}
 	if engine == "openrouter" {
 		return defaultOpenRouterModel
 	}
@@ -330,6 +335,10 @@ func applyFile(cfg *Config, path string) error {
 			cfg.SummarySkillFile = val
 		case "CLAUDE_BIN":
 			cfg.ClaudeBin = val
+		case "CODEX_BIN":
+			cfg.CodexBin = val
+		case "CODEX_RUNNER":
+			cfg.CodexRunner = val
 		case "HISTORY_DIR":
 			cfg.HistoryDir = val
 		case "NOTIFY_WEBHOOK_URL":
@@ -421,6 +430,12 @@ func applyFile(cfg *Config, path string) error {
 }
 
 func defaults(cfg *Config) {
+	if cfg.CodexBin == "" {
+		cfg.CodexBin = "/usr/local/bin/codex"
+	}
+	if cfg.CodexRunner == "" {
+		cfg.CodexRunner = "/usr/local/libexec/german-trainer-codex"
+	}
 	// Defaults so the app runs with a minimal .env.
 	if cfg.LLMEngine == "" {
 		cfg.LLMEngine = "polza"

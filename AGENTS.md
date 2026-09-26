@@ -43,7 +43,7 @@ There are no tests in this project.
 - `agi/` — Asterisk AGI protocol (reads vars, sends commands, plays audio via stdin/stdout)
 - `config/` — Custom .env parser (reads from `/etc/german-trainer/.env`, not env vars)
 - `stt/` — Speech-to-text. `Transcriber` interface; factory in `stt.go` selects `custom` (any OpenAI-compatible endpoint, config-driven — this is the self-hosted whisper in production), Groq Whisper, polza or openrouter by `STT_ENGINE`, and wraps the choice in the `STT_FALLBACK_ENGINE` fallback. All four engines are `sttSpec` values over one shared multipart client in `transcriber.go`, which also owns the retry, the error-message extraction and the transcript normalization (see STT engines below)
-- `llm/` — `Provider` interface (`Complete(system, messages)`); factory in `llm.go` selects one of three backends: polza (`polza.go`), openrouter (`openrouter.go`) — both thin wrappers over the shared OpenAI-compatible chat client in `openai_compat.go` — or the Claude CLI (`claude.go`). `Conversation` wraps a provider with the tutor system prompt. A separate provider instance is built per task, so dialog and summary can use different **engines** as well as different models (see per-task engines below). `openai_compat.go` also owns the resilience layer: retries on temporary failures and OpenRouter's `models` fallback array (see below)
+- `llm/` — `Provider` interface (`Complete(system, messages)`); factory in `llm.go` selects one of four backends: polza (`polza.go`), openrouter (`openrouter.go`) — both thin wrappers over the shared OpenAI-compatible chat client in `openai_compat.go` — Claude CLI (`claude.go`), or Codex CLI (`codex.go`). `Conversation` wraps a provider with the tutor system prompt. A separate provider instance is built per task, so dialog and summary can use different **engines** as well as different models (see per-task engines below). `openai_compat.go` also owns the resilience layer: retries on temporary failures and OpenRouter's `models` fallback array (see below)
 - `tts/` — `Synthesizer` interface with five backends: polza, openrouter, OpenAI, ElevenLabs, Piper (local). Factory in `tts.go`, selected by `TTS_ENGINE` config. The openrouter backend accepts both JSON (`{"audio":…}`) and raw-bytes responses. `tts.New` returns the backend wrapped in the style filter, plus the expression-tag dialect its model understands (`style.go`, see below)
 - `session/` — Per-call session: generates nano-timestamp ID, manages history file and temp file cleanup
 - `skill/` — Strips YAML frontmatter from prompt markdown files
@@ -82,6 +82,19 @@ In production this is a whisper.cpp + `ggml-large-v3` server with silero VAD ahe
 - **The setuid-root C wrapper is not in the live path.** The dialplan calls `AGI(german_trainer_agi)` — a shell wrapper deployed by Ansible that `exec`s the Go binary through `chrt --other 0 nice -n 5`, because Asterisk runs with `-p` (SCHED_RR:10) and children inherit the real-time policy: `ffmpeg`/`claude` then compete with Asterisk's media timer at equal RT priority and the audio stutters. The AGI therefore runs as the **asterisk** user with no privilege elevation, and the dialplan sets `AGISIGHUP=no` so a hangup lets the process finish its post-call summary. `deploy/agi_wrapper.c` and `task deploy` remain usable for a manual/local install only.
 
 ## Key Design Decisions
+
+**Codex CLI:** `LLM_ENGINE=codex` uses `CODEX_BIN` (default `/usr/local/bin/codex`)
+through `sudo -n -u sergey -H` and the root-owned `CODEX_RUNNER`, with per-task `LLM_MODEL` /
+`LLM_SUMMARY_MODEL` (default `gpt-6-luna`) and `REASONING`. The runner executes
+`timeout` as `sergey`, who can terminate Codex and its children; `asterisk`
+cannot signal them, and production sudo-rs has no `sudo -T`. Ansible validates
+the runner-only sudoers permission. Prompts and role-preserving
+messages travel through stdin; only the last agent message of a completed
+JSON turn is returned. User config, shell/web tools, hooks and persistent
+sessions are disabled. Temperature, MaxTokens and application-level retries
+are HTTP settings and do not apply to Codex. For deployments from unpublished
+code, the Ansible role accepts `german_trainer_local_src`; without it a source
+revision missing the Codex provider is refused before installing binaries.
 
 - Zero external Go dependencies (stdlib only, `go.mod` has no requires)
 - LLM access is HTTP (polza.ai or openrouter.ai, both OpenAI-compatible) by default; Claude Code CLI subprocess is a switchable fallback

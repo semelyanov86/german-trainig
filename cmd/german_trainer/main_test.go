@@ -53,10 +53,13 @@ func TestLLMSpecsKeepSharedSettingsAndTaskOverrides(t *testing.T) {
 		LLMDialogMaxTokens: 300, LLMSummaryMaxTokens: 8000,
 		LLMDialogFallbackModels: []string{"dialog-backup"}, LLMSummaryFallbackModels: []string{"report-backup"},
 		LLMDialogRetries: 2, LLMSummaryRetries: 3,
-		PolzaAPIKey: "polza-key", OpenRouterAPIKey: "router-key", ClaudeBin: "/usr/bin/claude",
+		PolzaAPIKey: "polza-key", OpenRouterAPIKey: "router-key", ClaudeBin: "/usr/bin/claude", CodexBin: "/usr/bin/codex", CodexRunner: "/test/codex-runner",
 		HistoryDir: "/tmp/history", ClaudeMaxOutputTokens: 64000, ClaudeMaxThinkingTokens: 8192, ClaudeEffort: "medium",
 	}
 	dialog, report := dialogSpec(cfg), summarySpec(cfg)
+	if dialog.CodexBin != "/usr/bin/codex" || report.CodexBin != dialog.CodexBin || dialog.CodexRunner != "/test/codex-runner" || report.CodexRunner != dialog.CodexRunner {
+		t.Fatalf("Codex entrypoint lost between task specs: dialog=%q report=%q", dialog.CodexBin, report.CodexBin)
+	}
 	if dialog.Engine != "openrouter" || dialog.Model != "dialog-model" || dialog.Temperature != "0.2" || dialog.Reasoning != "low" || dialog.MaxTokens != 300 || len(dialog.FallbackModels) != 1 || dialog.FallbackModels[0] != "dialog-backup" || dialog.Retry.Attempts != 2 || dialog.Retry.Timeout != dialogRetry.Timeout {
 		t.Fatalf("dialog settings changed: %+v", dialog)
 	}

@@ -7,6 +7,27 @@ import (
 	"testing"
 )
 
+func TestCodexTaskConfiguration(t *testing.T) {
+	for _, tc := range []struct{ env, dialog, summary, dialogModel, summaryModel, bin string }{
+		{"LLM_ENGINE=codex\n", "codex", "codex", "gpt-6-luna", "gpt-6-luna", "/usr/local/bin/codex"},
+		{"LLM_ENGINE=openrouter\nLLM_SUMMARY_ENGINE=codex\nCODEX_BIN=/custom/codex\n", "openrouter", "codex", defaultOpenRouterModel, "gpt-6-luna", "/custom/codex"},
+		{"LLM_ENGINE=codex\nLLM_DIALOG_ENGINE=claude\nLLM_SUMMARY_MODEL=custom-model\n", "claude", "codex", "openai/gpt-5.4-mini", "custom-model", "/usr/local/bin/codex"},
+	} {
+		path := filepath.Join(t.TempDir(), ".env")
+		write(t, path, tc.env)
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.LLMDialogEngine != tc.dialog || cfg.LLMSummaryEngine != tc.summary || cfg.LLMModel != tc.dialogModel || cfg.LLMSummaryModel != tc.summaryModel || cfg.CodexBin != tc.bin {
+			t.Fatalf("unexpected engines/models for %q: %+v", tc.env, cfg)
+		}
+		if tc.dialog == "codex" && len(cfg.LLMDialogFallbackModels) != 0 || tc.summary == "codex" && len(cfg.LLMSummaryFallbackModels) != 0 {
+			t.Fatal("OpenRouter fallback models leaked into Codex")
+		}
+	}
+}
+
 func TestLegacyCallAndNamedProfile(t *testing.T) {
 	dir := t.TempDir()
 	base := filepath.Join(dir, ".env")
