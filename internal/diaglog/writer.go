@@ -48,7 +48,7 @@ func (w Writer) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 	provider := "unknown"
-	for _, name := range []string{"OpenRouter", "Polza", "Groq", "Custom", "Claude", "ElevenLabs", "OpenAI", "Piper", "ffmpeg"} {
+	for _, name := range []string{"OpenRouter", "Polza", "Groq", "Custom", "Claude", "ElevenLabs", "OpenAI", "Yandex", "Piper", "ffmpeg"} {
 		if strings.Contains(strings.ToLower(line), strings.ToLower(name)) {
 			provider = name
 			break

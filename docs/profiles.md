@@ -130,10 +130,11 @@ One caller utterance can last seven minutes; the call still has at most 25 turns
 
 Production settings are independent in
 `vault_german_trainer_psychologist_env`, rendered to
-`/etc/german-trainer/profiles/psychologist.env`. Engines, dialog/report models,
-STT/TTS models and voices start with the active trainer values, while subsequent
-profile changes do not alter 555. The profile explicitly configures the same
-report recipient. 777 uses the existing MixMonitor/audio delivery subroutine,
+`/etc/german-trainer/profiles/psychologist.env`. Engines, dialog/report models
+and STT remain independently configurable. Psychologist
+TTS uses Yandex SpeechKit v3 `livetts`, voice `sofia`, role `casual`, with native
+pause/accent/stress markup. Profile changes do not alter 555. The profile
+explicitly configures the same report recipient. 777 uses the existing MixMonitor/audio delivery subroutine,
 as requested. Deploy profile assets first, then the narrowly tagged
 `asterisk_dialplan` task in Ansible. The default 555 route has no profile argument.
 Before exposing 777, Ansible runs `german_trainer --check-profile psychologist`:

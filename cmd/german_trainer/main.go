@@ -184,6 +184,12 @@ func main() {
 		OpenRouterTTSModel:  cfg.OpenRouterTTSModel,
 		OpenRouterTTSVoice:  cfg.OpenRouterTTSVoice,
 		OpenRouterTTSFormat: cfg.OpenRouterTTSFormat,
+		YandexToken:         cfg.YandexToken,
+		YandexAuthType:      cfg.YandexAuthType,
+		YandexFolderID:      cfg.YandexFolderID,
+		YandexTTSModel:      cfg.YandexTTSModel,
+		YandexTTSVoice:      cfg.YandexTTSVoice,
+		YandexTTSRole:       cfg.YandexTTSRole,
 		StyleTags:           cfg.TTSStyleTags,
 		LogUtterances:       cfg.LogUtterances,
 	}, logger)

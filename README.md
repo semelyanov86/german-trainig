@@ -7,7 +7,7 @@ deployment are managed by Ansible.
 Asterisk AGI application for practicing spoken German through phone calls.
 
 ```
-User calls → Asterisk AGI → STT (Groq/polza/openrouter) → LLM (polza/openrouter/Claude CLI/Codex CLI) → TTS (polza/openrouter/OpenAI/ElevenLabs/Piper) → audio back to user
+User calls → Asterisk AGI → STT (Groq/polza/openrouter) → LLM (polza/openrouter/Claude CLI/Codex CLI) → TTS (polza/openrouter/OpenAI/ElevenLabs/Piper/Yandex) → audio back to user
 ```
 
 ## Prerequisites
@@ -209,6 +209,33 @@ Edit `TTS_ENGINE` in `/etc/german-trainer/.env`:
 | `piper` | Piper (local) | Free, no API needed, runs offline. Requires piper-tts + voice model |
 | `polza` | polza.ai | OpenAI-compatible. Model via `POLZA_TTS_MODEL`, voice `POLZA_TTS_VOICE`, key `POLZA_API_KEY` |
 | `openrouter` | openrouter.ai | OpenAI-compatible. Model via `OPENROUTER_TTS_MODEL`, voice `OPENROUTER_TTS_VOICE`, key `OPENROUTER_API_KEY` |
+| `yandex` | Yandex SpeechKit v3 | REST gateway of the gRPC API; `YANDEX_TOKEN`, `YANDEX_TTS_MODEL`, `YANDEX_TTS_VOICE`, `YANDEX_TTS_ROLE` |
+
+For Russian psychologist calls on 777, configure its independent profile:
+
+```dotenv
+TTS_ENGINE=yandex
+YANDEX_TOKEN=your_yandex_api_key_here
+YANDEX_AUTH_TYPE=auto
+YANDEX_TTS_MODEL=livetts
+YANDEX_TTS_VOICE=sofia
+YANDEX_TTS_ROLE=casual
+TTS_STYLE_TAGS=auto
+```
+
+Production values belong in `vault_german_trainer_psychologist_env` in the
+Ansible vault. The base trainer profile on 555 keeps its own engine and models.
+`YANDEX_AUTH_TYPE=auto` uses `Api-Key` for API keys and `Bearer` for `t1.` IAM
+tokens; `api-key` and `iam` explicitly select the scheme. User/federated IAM
+tokens also require `YANDEX_FOLDER_ID` and expire, so they must be refreshed.
+Service-account API keys do not need a folder header.
+
+The [v3 REST API](https://aistudio.yandex.ru/ru/docs/speechkit/tts/api/tts-v3-rest)
+uses the same synthesis model and settings as gRPC. All audio chunks are joined
+before conversion to private 8kHz mono WAV files for Asterisk. Text-only LiveTTS
+messages are ignored; malformed or failed streams never play partial audio.
+Long replies use `unsafeMode` to allow automatic splitting into utterances;
+Yandex bills each utterance separately.
 
 ### Expression tags
 
@@ -222,12 +249,20 @@ its vocabulary is appended to the tutor system prompt at startup:
 | `grok` + `tts` | grok | 12 inline sounds (`[laugh]`, `[sigh]`, `[pause]`, …) plus 12 wrapping styles (`<whisper>…</whisper>`, `<slow>`, `<angry>`, …) |
 | `gemini` + `tts` | gemini | any descriptive word in square brackets (`[sarcastically]`, `[giggles]`, `[very fast]`) |
 | ElevenLabs `v3` | elevenlabs | audio tags in square brackets (`[laughs]`, `[whispers]`, `[sarcastic]`) |
+| `TTS_ENGINE=yandex` | yandex | native pauses `<[tiny]>` through `<[huge]>`, `sil<[300]>`; word accent `<[accented]>` / `**word**`; vowel stress `зам+ок` |
 | anything else | off | none — the model is told to write plain text |
 
 `TTS_STYLE_TAGS` overrides the detection: `auto` (default), `off`, or a dialect name.
 Whatever the dialect, every reply is filtered before synthesis: markup the engine
 does not know is removed rather than spoken out loud, and the history file — the
 input to the post-call analysis — is always stored without tags.
+
+Yandex's [native markup](https://aistudio.yandex.ru/ru/docs/speechkit/tts/markup/tts-markup)
+is separate from the request-wide voice role. Sofia LiveTTS supports `casual`
+and `support`; other voices have their own role vocabulary. Grok/Gemini emotion
+tags and SSML are removed. Phoneme substitutions are excluded from the dialog
+guide so ordinary words remain available to the written transcript. Disabling
+markup with `TTS_STYLE_TAGS=off` leaves the configured voice role active.
 
 Example — switch to OpenAI with a different voice:
 ```bash

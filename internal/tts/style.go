@@ -3,6 +3,7 @@ package tts
 import (
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -55,6 +56,8 @@ func (d Dialect) GuideFor(language string) string {
 		return `## Голос и эмоции
 
 Ответ будет озвучен. Уместно добавь один, максимум два английских аудиотега в квадратных скобках; произносимый текст остаётся по-русски. Например: [curious] [serious] [sighs]. Не заменяй тегами слова и не ставь два тега подряд.`
+	case "yandex":
+		return yandexGuide
 	default:
 		return ""
 	}
@@ -62,12 +65,13 @@ func (d Dialect) GuideFor(language string) string {
 
 // markupPattern matches one piece of markup: an expression tag in square or
 // angle brackets, or a run of asterisks. The length cap keeps an unclosed
-// bracket in ordinary text from swallowing a whole sentence, and German uses
-// none of these characters in speech, so nothing legitimate matches. Asterisks
-// are never allowed by any dialect — an engine reads "*wirklich*" back as
-// "Sternchen wirklich" — but only the markers go: the word between them stays,
+// bracket in ordinary text from swallowing a whole sentence. Yandex native
+// pauses and paired emphasis must be matched before generic brackets/stars.
+// Other dialects strip the asterisks, retaining the word between them,
 // because dropping it would silently swallow an emphasised sentence.
-var markupPattern = regexp.MustCompile(`\[[^\[\]\n]{1,40}\]|</?[^<>\n]{1,40}>|\*+`)
+var markupPattern = regexp.MustCompile(`\*\*[^*\[\]<>\n]{1,120}\*\*|(?:sil)?<\[[^<>\[\]\n]{1,40}\]>|\[\[[^\[\]\n]{1,120}\]\]|\[[^\[\]\n]{1,40}\]|</?[^<>\n]{1,40}>|\*+`)
+
+var yandexStressPattern = regexp.MustCompile(`\+([аеёиоуыэюяАЕЁИОУЫЭЮЯ])`)
 
 var spaceBeforePunct = regexp.MustCompile(`\s+([,.!?;:…])`)
 
@@ -76,11 +80,14 @@ var spaceBeforePunct = regexp.MustCompile(`\s+([,.!?;:…])`)
 // *seufzt* — and an unknown tag is not silently ignored downstream: the engine
 // speaks it.
 func (d Dialect) Sanitize(text string) string {
+	if d.Name != "yandex" {
+		text = yandexStressPattern.ReplaceAllString(text, "$1")
+	}
 	return tidy(markupPattern.ReplaceAllStringFunc(text, func(m string) string {
 		if d.allows(m) {
 			return m
 		}
-		return " "
+		return stripMarkup(m)
 	}))
 }
 
@@ -88,10 +95,32 @@ func (d Dialect) Sanitize(text string) string {
 // history file feeds the post-call analysis, which grades the caller's German:
 // stage directions addressed to a voice engine have no business in it.
 func PlainText(text string) string {
-	return tidy(markupPattern.ReplaceAllString(text, " "))
+	text = yandexStressPattern.ReplaceAllString(text, "$1")
+	return tidy(markupPattern.ReplaceAllStringFunc(text, stripMarkup))
+}
+
+func stripMarkup(markup string) string {
+	if strings.HasPrefix(markup, "**") && strings.HasSuffix(markup, "**") && len(markup) > 4 {
+		return " " + markup[2:len(markup)-2] + " "
+	}
+	return " "
 }
 
 func (d Dialect) allows(markup string) bool {
+	if d.Name == "yandex" {
+		if strings.HasPrefix(markup, "**") && strings.HasSuffix(markup, "**") && len(markup) > 4 {
+			return true
+		}
+		switch markup {
+		case "<[tiny]>", "<[small]>", "<[medium]>", "<[large]>", "<[huge]>", "<[accented]>":
+			return true
+		}
+		if strings.HasPrefix(markup, "sil<[") && strings.HasSuffix(markup, "]>") {
+			n, err := strconv.Atoi(markup[5 : len(markup)-2])
+			return err == nil && n >= 1 && n <= 7000
+		}
+		return false
+	}
 	if !strings.HasPrefix(markup, "[") && !strings.HasPrefix(markup, "<") {
 		return false
 	}
@@ -180,6 +209,8 @@ func DialectFor(engine string, cfg Config, logger *log.Logger) Dialect {
 		return geminiDialect()
 	case "elevenlabs":
 		return elevenDialect()
+	case "yandex":
+		return Dialect{Name: "yandex", Guide: yandexGuide}
 	default:
 		// A typo must not hand the caller a reply full of spoken brackets, so
 		// an unrecognised value falls back to plain text rather than guessing.
@@ -188,6 +219,8 @@ func DialectFor(engine string, cfg Config, logger *log.Logger) Dialect {
 	}
 
 	switch engine {
+	case "yandex":
+		return Dialect{Name: "yandex", Guide: yandexGuide}
 	case "openrouter":
 		return dialectForModel(cfg.OpenRouterTTSModel)
 	case "polza":
@@ -201,6 +234,21 @@ func DialectFor(engine string, cfg Config, logger *log.Logger) Dialect {
 	// not by markup in the text) and piper (no styling at all).
 	return Dialect{Name: "off"}
 }
+
+// SpeechKit v3 uses native TTS markup, not SSML or Grok/Gemini emotion tags.
+// Voice and role are request-wide API hints configured separately.
+// https://aistudio.yandex.ru/ru/docs/speechkit/tts/markup/tts-markup
+const yandexGuide = `## Голос и интонация
+
+Ответ озвучивает Яндекс SpeechKit. Голос и амплуа уже заданы приложением; произносимый текст остаётся по-русски. Эмоцию передавай естественными словами, пунктуацией и уместными паузами. Не имитируй плач или смех собеседника.
+Поддерживаемая разметка:
+- Паузы по контексту: <[tiny]> <[small]> <[medium]> <[large]> <[huge]>.
+- Пауза в миллисекундах: sil<[300]>. Допустимо от 1 до 7000 мс, в диалоге предпочитай 200–600 мс.
+- Акцент на слове: <[accented]>слово или **слово**.
+- Ударение: + перед нужной гласной, например зам+ок. Используй только при неоднозначном произношении.
+Добавляй разметку по смыслу, обычно не больше двух пауз или акцентов на ответ. Пауза должна находиться между словами или предложениями, не в начале и не в конце ответа. Не ставь два маркера подряд.
+Нет тегов эмоции [sad], [sigh], <soft>, <whisper> и других тегов сторонних TTS. Не используй SSML и фонемы [[...]]. Разметка не заменяет произносимые слова.
+Пример: Похоже, тебе сейчас очень непросто. <[small]> Что из этого тревожит тебя сильнее всего?`
 
 // dialectForModel matches the aggregator model id, which carries the vendor:
 // "x-ai/grok-voice-tts-1.0", "google/gemini-3.1-flash-tts-preview".

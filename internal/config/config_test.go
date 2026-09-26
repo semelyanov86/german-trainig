@@ -86,12 +86,12 @@ func write(t *testing.T, path, data string) {
 func TestPsychologistConfigurationIsIndependent(t *testing.T) {
 	dir := t.TempDir()
 	base := filepath.Join(dir, ".env")
-	write(t, base, "PROFILE_IDS=psychologist\nLLM_ENGINE=codex\nLLM_MODEL=trainer-model\nLLM_SUMMARY_MODEL=trainer-summary\nMAX_RECORD_SECONDS=120\n")
+	write(t, base, "PROFILE_IDS=psychologist\nLLM_ENGINE=codex\nLLM_MODEL=trainer-model\nLLM_SUMMARY_MODEL=trainer-summary\nMAX_RECORD_SECONDS=120\nTTS_ENGINE=openrouter\nOPENROUTER_TTS_MODEL=x-ai/grok-voice-tts-1.0\n")
 	example, err := os.ReadFile("../../profiles/psychologist.env.example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	write(t, filepath.Join(dir, "profiles", "psychologist.env"), string(example)+"\nLLM_MODEL=psychologist-model\nLLM_SUMMARY_MODEL=psychologist-summary\n")
+	write(t, filepath.Join(dir, "profiles", "psychologist.env"), string(example)+"\nLLM_MODEL=psychologist-model\nLLM_SUMMARY_MODEL=psychologist-summary\nTTS_ENGINE=yandex\nYANDEX_TOKEN=private-key\nYANDEX_AUTH_TYPE=api-key\nYANDEX_FOLDER_ID=private-folder\nYANDEX_TTS_MODEL=livetts\nYANDEX_TTS_VOICE=sofia\nYANDEX_TTS_ROLE=casual\n")
 	psychologist, err := LoadProfile(base, "psychologist")
 	if err != nil {
 		t.Fatal(err)
@@ -102,12 +102,18 @@ func TestPsychologistConfigurationIsIndependent(t *testing.T) {
 	if psychologist.LogUtterances || !psychologist.SummaryEnabled || psychologist.GreetingNotice == "" || psychologist.TTSStyleTags != "auto" || psychologist.LLMModel != "psychologist-model" || psychologist.LLMSummaryModel != "psychologist-summary" {
 		t.Fatal("independent model, notice, style or reporting policy ignored")
 	}
+	if psychologist.TTSEngine != "yandex" || psychologist.YandexToken != "private-key" || psychologist.YandexAuthType != "api-key" || psychologist.YandexFolderID != "private-folder" || psychologist.YandexTTSModel != "livetts" || psychologist.YandexTTSVoice != "sofia" || psychologist.YandexTTSRole != "casual" {
+		t.Fatal("independent Yandex settings ignored")
+	}
 	trainer, err := Load(base)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if trainer.LLMModel != "trainer-model" || trainer.LLMSummaryModel != "trainer-summary" || trainer.MaxRecordSeconds != 120 || trainer.SummaryMode != "analysis" || trainer.FarewellMode != "phrase" {
 		t.Fatal("psychologist configuration affected the German trainer")
+	}
+	if trainer.TTSEngine != "openrouter" || trainer.OpenRouterTTSModel != "x-ai/grok-voice-tts-1.0" || trainer.YandexToken != "" {
+		t.Fatal("psychologist TTS configuration affected the German trainer")
 	}
 	write(t, base, "")
 	legacy, err := Load(base)

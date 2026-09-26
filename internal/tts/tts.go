@@ -29,6 +29,12 @@ type Config struct {
 	OpenRouterTTSModel  string
 	OpenRouterTTSVoice  string
 	OpenRouterTTSFormat string
+	YandexToken         string
+	YandexAuthType      string
+	YandexFolderID      string
+	YandexTTSModel      string
+	YandexTTSVoice      string
+	YandexTTSRole       string
 	StyleTags           string
 	LogUtterances       bool
 }
@@ -61,6 +67,8 @@ func newBackend(engine string, cfg Config, logger *log.Logger) Synthesizer {
 		return &PolzaSynth{cfg: cfg, logger: logger}
 	case "openrouter":
 		return &OpenRouterSynth{cfg: cfg, logger: logger}
+	case "yandex":
+		return &YandexSynth{cfg: cfg, logger: logger}
 	default:
 		return &PiperSynth{cfg: cfg, logger: logger}
 	}

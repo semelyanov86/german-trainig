@@ -67,7 +67,13 @@ type Config struct {
 	OpenRouterTTSModel  string
 	OpenRouterTTSVoice  string
 	OpenRouterTTSFormat string
-	TTSStyleTags        string // grok|gemini|elevenlabs|off|auto (see tts.DialectFor)
+	YandexToken         string
+	YandexAuthType      string // auto (API key or t1. IAM token), api-key, iam
+	YandexFolderID      string // required for a user IAM token; optional for service accounts
+	YandexTTSModel      string // livetts or general
+	YandexTTSVoice      string
+	YandexTTSRole       string
+	TTSStyleTags        string // grok|gemini|elevenlabs|yandex|off|auto (see tts.DialectFor)
 	ThemesFile          string
 
 	// The "custom" STT engine: any OpenAI-compatible audio/transcriptions
@@ -350,6 +356,18 @@ func applyFile(cfg *Config, path string) error {
 			cfg.TTSEngine = val
 		case "TTS_STYLE_TAGS":
 			cfg.TTSStyleTags = val
+		case "YANDEX_TOKEN":
+			cfg.YandexToken = val
+		case "YANDEX_AUTH_TYPE":
+			cfg.YandexAuthType = val
+		case "YANDEX_FOLDER_ID":
+			cfg.YandexFolderID = val
+		case "YANDEX_TTS_MODEL":
+			cfg.YandexTTSModel = val
+		case "YANDEX_TTS_VOICE":
+			cfg.YandexTTSVoice = val
+		case "YANDEX_TTS_ROLE":
+			cfg.YandexTTSRole = val
 		case "CLAUDE_MODEL":
 			cfg.ClaudeModel = val
 		case "PIPER_MODEL":
