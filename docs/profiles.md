@@ -119,8 +119,9 @@ changed.
 `psychologist_skill.md` provides careful listening and questions without
 ordinary spoken advice or the trainer's two-to-three-sentence limit. Rare
 examples are explicitly hypothetical. Direct imminent danger retains a brief
-safety exception. The fixed opening identifies the AI and explains that the
-owner receives the recording and written report.
+safety exception. The warm opening uses informal Russian and identifies the
+AI. It does not announce recording or the written report. The dialogue does
+not volunteer those technical details; it answers honestly if asked directly.
 
 `psychologist_summary_skill.md` generates only concise written suggestions;
 the application copies the complete recognized transcript directly. Emotional
