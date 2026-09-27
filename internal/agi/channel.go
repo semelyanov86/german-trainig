@@ -10,19 +10,31 @@ import (
 )
 
 type Channel struct {
-	scanner *bufio.Scanner
-	writer  io.Writer
-	logger  *log.Logger
-	dead    bool
-	Vars    map[string]string
+	scanner    *bufio.Scanner
+	writer     io.Writer
+	logger     *log.Logger
+	dead       bool
+	diagnostic Diagnostics
+	Vars       map[string]string
+}
+
+// Diagnostics contains only fixed command/failure categories and numeric AGI
+// fields. It deliberately excludes command arguments and raw replies.
+type Diagnostics struct {
+	Command     string
+	Status      int
+	Result      int
+	ResultKnown bool
+	Disconnect  string
 }
 
 func NewChannel(r io.Reader, w io.Writer, logger *log.Logger) *Channel {
 	return &Channel{
-		scanner: bufio.NewScanner(r),
-		writer:  w,
-		logger:  logger,
-		Vars:    make(map[string]string),
+		scanner:    bufio.NewScanner(r),
+		writer:     w,
+		logger:     logger,
+		Vars:       make(map[string]string),
+		diagnostic: Diagnostics{Command: "none", Disconnect: "none"},
 	}
 }
 
@@ -43,8 +55,12 @@ func (c *Channel) Cmd(cmd string) string {
 	if c.dead {
 		return ""
 	}
+	c.diagnostic.Command = commandCategory(cmd)
+	c.diagnostic.Status = 0
+	c.diagnostic.Result = 0
+	c.diagnostic.ResultKnown = false
 	c.logger.Printf("AGI> %s", cmd)
-	fmt.Fprintf(c.writer, "%s\n", cmd)
+	_, writeErr := fmt.Fprintf(c.writer, "%s\n", cmd)
 
 	for c.scanner.Scan() {
 		resp := c.scanner.Text()
@@ -55,10 +71,17 @@ func (c *Channel) Cmd(cmd string) string {
 		if strings.TrimSpace(resp) == "HANGUP" {
 			c.logger.Println("HANGUP received from Asterisk")
 			c.dead = true
+			c.setDisconnect("asterisk_hangup")
 			continue
 		}
 
 		c.logger.Printf("AGI< %s", resp)
+		if len(resp) >= 3 {
+			if status, err := strconv.Atoi(resp[:3]); err == nil && status >= 100 && status <= 599 {
+				c.diagnostic.Status = status
+			}
+		}
+		c.diagnostic.Result, c.diagnostic.ResultKnown = Result(resp)
 
 		// A reply always starts with a 3-digit status code; 511 is
 		// "Command Not Permitted on a dead channel". Match the code as a
@@ -67,12 +90,48 @@ func (c *Channel) Cmd(cmd string) string {
 		// used to kill a live call mid-conversation.
 		if strings.HasPrefix(resp, "511") {
 			c.dead = true
+			c.setDisconnect("dead_channel")
 			c.logger.Println("Channel is dead, stopping AGI commands")
 		}
 		return resp
 	}
 	c.dead = true
+	switch {
+	case writeErr != nil:
+		c.setDisconnect("write_error")
+	case c.scanner.Err() != nil:
+		c.setDisconnect("input_error")
+	default:
+		c.setDisconnect("input_eof")
+	}
 	return ""
+}
+
+func (c *Channel) setDisconnect(reason string) {
+	if c.diagnostic.Disconnect == "none" {
+		c.diagnostic.Disconnect = reason
+	}
+}
+
+func (c *Channel) Diagnostics() Diagnostics { return c.diagnostic }
+
+func commandCategory(cmd string) string {
+	switch {
+	case cmd == "ANSWER":
+		return "answer"
+	case cmd == "HANGUP":
+		return "hangup"
+	case strings.HasPrefix(cmd, "RECORD FILE "):
+		return "record"
+	case strings.HasPrefix(cmd, "STREAM FILE "):
+		return "playback"
+	case strings.HasPrefix(cmd, "EXEC StartMusicOnHold "):
+		return "start_moh"
+	case cmd == "EXEC StopMusicOnHold":
+		return "stop_moh"
+	default:
+		return "other"
+	}
 }
 
 // Result extracts the numeric value of the "result=" field of an AGI reply

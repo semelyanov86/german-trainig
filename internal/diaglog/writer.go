@@ -13,6 +13,19 @@ var sttFallbackAttempt = regexp.MustCompile(`(?s)\bWARN (Custom|Groq|Polza|OpenR
 var sttFallbackAnswered = regexp.MustCompile(`\b(Custom|Groq|Polza|OpenRouter) STT answered instead of (Custom|Groq|Polza|OpenRouter)\s*$`)
 var safeProgress = regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} (Summary: generated \d+ chars|Summary: webhook sent, status 2\d\d|Cleanup complete|Private session started)\n$`)
 
+// The complete event must match. An appended transcript, URL or provider error
+// must never bypass the private log boundary through a diagnostic prefix.
+var safeCallEvent = regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} (` +
+	`Call started uniqueid=(?:[0-9]+(?:\.[0-9]+)?|unknown)|` +
+	`Call turn uniqueid=(?:[0-9]+(?:\.[0-9]+)?|unknown) turn=[0-9]+|` +
+	`Call ended uniqueid=(?:[0-9]+(?:\.[0-9]+)?|unknown) turn=[0-9]+ ` +
+	`stage=(?:setup|answer|greeting_hold|greeting_llm|greeting_playback|record|thinking_hold|silence_prompt|stt|stt_fallback_playback|farewell_llm|farewell_playback|dialog_llm|dialog_fallback_playback|outage_playback|reply_playback) ` +
+	`reason=(?:unexpected_exit|session_error|prompt_error|channel_closed|greeting_llm_error|record_failed|farewell|dialog_errors|turn_limit) ` +
+	`alive=(?:true|false) hangup_requested=(?:true|false) ` +
+	`disconnect=(?:none|asterisk_hangup|dead_channel|write_error|input_error|input_eof) ` +
+	`agi_command=(?:none|answer|hangup|record|playback|start_moh|stop_moh|other) ` +
+	`agi_status=[0-9]+ agi_result=-?[0-9]+ agi_result_known=(?:true|false) duration_seconds=[0-9]+)\n$`)
+
 // Writer is the final log boundary for a private profile. Provider errors may
 // contain response bodies, URLs or CLI stderr, so no original line passes.
 type Writer struct {
@@ -22,6 +35,10 @@ type Writer struct {
 
 func (w Writer) Write(p []byte) (int, error) {
 	line := string(p)
+	if match := safeCallEvent.FindStringSubmatch(line); len(match) == 2 {
+		_, err := fmt.Fprintf(w.Output, "%s profile=%s: %s\n", time.Now().Format("2006/01/02 15:04:05"), w.ProfileID, match[1])
+		return len(p), err
+	}
 	if match := safeProgress.FindStringSubmatch(line); len(match) == 2 {
 		_, err := fmt.Fprintf(w.Output, "%s profile=%s: %s\n", time.Now().Format("2006/01/02 15:04:05"), w.ProfileID, match[1])
 		return len(p), err

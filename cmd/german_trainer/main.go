@@ -103,6 +103,8 @@ func main() {
 
 	ch := agi.NewChannel(os.Stdin, os.Stdout, logger)
 	ch.ReadVars()
+	call := newCallDiagnostics(logger, ch.Vars["agi_uniqueid"])
+	defer call.finish(ch)
 	logger.Printf("AGI started, channel=%s callerid=%s tts=%s stt=%s",
 		ch.Vars["agi_channel"], ch.Vars["agi_callerid"], cfg.TTSEngine, cfg.STTEngine)
 
@@ -110,6 +112,7 @@ func main() {
 	if !cfg.LogUtterances {
 		sess, err = session.NewPrivate(cfg.HistoryDir, logger)
 		if err != nil {
+			call.reason = "session_error"
 			logger.Printf("ERROR starting private session: %v", err)
 			return
 		}
@@ -139,12 +142,15 @@ func main() {
 		summaryPrompt = loadPrompt(cfg.SummarySkillFile, logger)
 	}
 	if cfg.ProfileID != "german" && (tutorPrompt == "" || (cfg.SummaryEnabled && summaryPrompt == "")) {
+		call.reason = "prompt_error"
 		logger.Println("ERROR named profile prompt is missing or empty")
 		return
 	}
 
 	summarizer := newSummarizer(cfg, summaryPrompt, logger)
 	defer func() {
+		// Record the actual exit before a potentially slow post-call report.
+		call.finish(ch)
 		if summarizer != nil {
 			if err := summarizer.Run(sess.ReadHistory()); err != nil {
 				logger.Printf("ERROR generating summary: %v", err)
@@ -206,12 +212,14 @@ func main() {
 	dialogProvider := llm.New(dialogSpec(cfg), logger)
 	dialog := llm.NewConversationForLanguage(dialogProvider, tutorPrompt, cfg.Language)
 
+	call.stage = "answer"
 	ch.Cmd("ANSWER")
 	if !ch.IsAlive() {
 		return
 	}
 
 	// Play music while generating greeting
+	call.stage = "greeting_hold"
 	ch.Cmd("EXEC StartMusicOnHold " + mohClass)
 	if !ch.IsAlive() {
 		return
@@ -230,12 +238,15 @@ func main() {
 	}
 
 	logger.Println("Generating initial greeting...")
+	call.stage = "greeting_llm"
 	greeting, err := dialog.Call("", themePrompt)
 	if err != nil {
+		call.reason = "greeting_llm_error"
 		logger.Printf("ERROR initial LLM call: %v", err)
 		// The caller is on hold music waiting to be greeted. Dropping the call
 		// here used to leave them listening to silence with no idea why; playTTS
 		// stops the music and speaks, so they at least hear that to call later.
+		call.stage = "outage_playback"
 		playTTS(ch, sess, synthesizer, cfg.OutageLine, logger)
 		return
 	}
@@ -252,6 +263,7 @@ func main() {
 
 	// Music keeps playing — playTTS stops it once the audio is synthesized.
 	writePreparedReply(sess, cfg.HistoryRole, greeting)
+	call.stage = "greeting_playback"
 	if !playTTS(ch, sess, synthesizer, greeting, logger) {
 		return
 	}
@@ -261,6 +273,7 @@ func main() {
 	// nothing, transcribe noise, fail, repeat (2026-08-19).
 	consecutiveErrors := 0
 	for turn := 0; turn < maxTurns; turn++ {
+		call.startTurn(turn + 1)
 		logger.Printf("--- Turn %d ---", turn+1)
 
 		recFile := filepath.Join(sess.TempDir, fmt.Sprintf("user_%s_%d", sess.ID, turn))
@@ -269,7 +282,12 @@ func main() {
 		resp := ch.Cmd(fmt.Sprintf("RECORD FILE %s wav \"#\" %d 0 s=%d", recFile, cfg.MaxRecordSeconds*1000, silenceSec))
 		res, _ := agi.Result(resp)
 		if !ch.IsAlive() || res == -1 {
+			if ch.IsAlive() {
+				call.reason = "record_failed"
+			}
 			logger.Println("Hangup during recording")
+			call.hangupRequested = ch.IsAlive()
+			call.finish(ch)
 			captureFinalUtterance(recFile+".wav", resp, cfg, transcriber, sess, logger)
 			break
 		}
@@ -283,8 +301,10 @@ func main() {
 		// Start "thinking" music the moment the user stops talking. It masks
 		// the latency of STT + LLM + TTS and is stopped inside playTTS, once
 		// the reply audio is ready and about to be streamed.
+		call.stage = "thinking_hold"
 		ch.Cmd("EXEC StartMusicOnHold " + mohClass)
 		if !ch.IsAlive() {
+			call.finish(ch)
 			captureFinalUtterance(wavPath, resp, cfg, transcriber, sess, logger)
 			break
 		}
@@ -294,15 +314,18 @@ func main() {
 		// each invention used to become a real conversation turn.
 		if n, ok := agi.Endpos(resp); ok && n < minSpeechSamples {
 			logger.Printf("Recording holds only %.1fs of speech, treating as silence", speechSeconds(n))
+			call.stage = "silence_prompt"
 			if !promptForSpeech(ch, sess, synthesizer, dialog, cfg, logger) {
 				break
 			}
 			continue
 		}
 
+		call.stage = "stt"
 		userText, err := transcriber.Transcribe(wavPath)
 		if err != nil {
 			logger.Printf("ERROR transcribing: %v", err)
+			call.stage = "stt_fallback_playback"
 			if !playTTS(ch, sess, synthesizer, cfg.GlitchLine, logger) {
 				break
 			}
@@ -315,6 +338,7 @@ func main() {
 			} else {
 				logger.Println("No usable transcription, asking the caller to speak")
 			}
+			call.stage = "silence_prompt"
 			if !promptForSpeech(ch, sess, synthesizer, dialog, cfg, logger) {
 				break
 			}
@@ -327,19 +351,24 @@ func main() {
 		if isFarewell(userText, cfg) {
 			logger.Println("Farewell detected")
 			sess.WriteHistory("User", userText)
+			call.stage = "farewell_llm"
 			fw, err := dialog.Call(sess.ReadHistory(), userText)
 			if err != nil || strings.TrimSpace(fw) == "" {
 				logger.Printf("WARN farewell reply unavailable (%v), using the fixed line", err)
 				fw = cfg.FarewellLine
 			}
 			writePreparedReply(sess, cfg.HistoryRole, fw)
-			playTTS(ch, sess, synthesizer, fw, logger)
+			call.stage = "farewell_playback"
+			if playTTS(ch, sess, synthesizer, fw, logger) {
+				call.reason = "farewell"
+			}
 			break
 		}
 
 		sess.WriteHistory("User", userText)
 
 		history := sess.ReadHistory()
+		call.stage = "dialog_llm"
 		response, err := dialog.Call(history, userText)
 		if err != nil {
 			consecutiveErrors++
@@ -347,10 +376,13 @@ func main() {
 			// Say something either way — stopping the music and recording again
 			// is what made the failure feel like a frozen call.
 			if consecutiveErrors >= maxConsecutiveErrors {
+				call.reason = "dialog_errors"
 				logger.Printf("Giving up after %d failed turns in a row", consecutiveErrors)
+				call.stage = "outage_playback"
 				playTTS(ch, sess, synthesizer, cfg.OutageLine, logger)
 				break
 			}
+			call.stage = "dialog_fallback_playback"
 			if !playTTS(ch, sess, synthesizer, cfg.GlitchLine, logger) {
 				break
 			}
@@ -366,12 +398,18 @@ func main() {
 		}
 
 		writePreparedReply(sess, cfg.HistoryRole, response)
+		call.stage = "reply_playback"
 		if !playTTS(ch, sess, synthesizer, response, logger) {
 			break
 		}
 	}
 
 	logger.Println("Session ending")
+	if call.reason == "unexpected_exit" && ch.IsAlive() {
+		call.reason = "turn_limit"
+	}
+	call.hangupRequested = ch.IsAlive()
+	call.finish(ch)
 	if ch.IsAlive() {
 		ch.Cmd("HANGUP")
 	}

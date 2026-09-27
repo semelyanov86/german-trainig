@@ -56,3 +56,23 @@ func TestPrivateProgressContainsNoPayload(t *testing.T) {
 		t.Fatalf("unsafe progress diagnostics: %q", got)
 	}
 }
+
+func TestCallEventWhitelistRejectsAppendedOrUnknownPayloads(t *testing.T) {
+	const event = "Call ended uniqueid=1790507489.16 turn=10 stage=reply_playback reason=farewell alive=true hangup_requested=true disconnect=none agi_command=playback agi_status=200 agi_result=0 agi_result_known=true duration_seconds=1220"
+	for _, invalid := range []string{
+		event + " token=secret",
+		event + "\nUser said: private speech",
+		strings.Replace(event, "reason=farewell", "reason=private_speech", 1),
+		strings.Replace(event, "stage=reply_playback", "stage=https://secret.example", 1),
+		strings.Replace(event, "uniqueid=1790507489.16", "uniqueid=caller_phone", 1),
+		"Call started uniqueid=1790507489.16 transcript=secret",
+		"Call turn uniqueid=1790507489.16 turn=10 transcript=secret",
+	} {
+		var out bytes.Buffer
+		logger := log.New(Writer{Output: &out, ProfileID: "psychologist"}, "", log.LstdFlags)
+		logger.Println(invalid)
+		if got := out.String(); got != "" {
+			t.Errorf("untrusted diagnostic passed the filter: %q", got)
+		}
+	}
+}

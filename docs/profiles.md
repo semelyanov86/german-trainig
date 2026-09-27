@@ -71,6 +71,18 @@ provider responses, request URLs or CLI stderr. Per-call history files have
 mode `0600` and are removed after the call. The German logging default remains
 true.
 
+The log also retains `Call started`, `Call turn` and `Call ended` events for
+every profile, including private ones. They contain the numeric Asterisk
+`uniqueid` for CDR correlation, turn number, final stage, fixed exit reason,
+duration and numeric AGI status/result. `hangup_requested=true` means the app
+is about to issue its own hangup; `disconnect=asterisk_hangup`, `dead_channel`,
+`input_eof`, `input_error` or `write_error` describes the observed AGI closure.
+This does not identify who sent a SIP BYE or its network cause. Exit events
+are written before final-recording transcription and post-call report work,
+so that their timestamp reflects the observed end of the conversation.
+The events contain no caller number, command paths, utterances, raw replies,
+URLs or provider error bodies.
+
 `SUMMARY_MODE=transcript_advice` generates only the written advice with the
 report model and inserts the saved transcript verbatim in the delivered report.
 The German `analysis` format and its report-size diagnostic remain unchanged.
