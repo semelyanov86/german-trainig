@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"german-trainer/internal/agi"
 	"german-trainer/internal/config"
+	"german-trainer/internal/llm"
 	"german-trainer/internal/session"
 )
 
@@ -171,5 +173,11 @@ func TestLLMSpecsKeepSharedSettingsAndTaskOverrides(t *testing.T) {
 	}
 	if report.ClaudeModel != dialog.ClaudeModel || report.PolzaAPIKey != dialog.PolzaAPIKey || report.OpenRouterAPIKey != dialog.OpenRouterAPIKey || report.ClaudeBin != dialog.ClaudeBin || report.WorkDir != dialog.WorkDir || report.ClaudeMaxOutputTokens != dialog.ClaudeMaxOutputTokens || report.ClaudeMaxThinkingTokens != dialog.ClaudeMaxThinkingTokens || report.ClaudeEffort != dialog.ClaudeEffort {
 		t.Fatalf("task specs diverged on shared settings: dialog=%+v report=%+v", dialog, report)
+	}
+
+	cfg.LLMDialogEngine, cfg.LLMSummaryEngine = llm.EngineCodex, llm.EngineCodex
+	dialog, report = dialogSpec(cfg), summarySpec(cfg)
+	if dialog.Retry.Timeout != 20*time.Second || report.Retry.Timeout != 10*time.Minute {
+		t.Fatalf("Codex task deadlines: dialog=%v report=%v", dialog.Retry.Timeout, report.Retry.Timeout)
 	}
 }

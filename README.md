@@ -327,7 +327,8 @@ Codex runs in `exec` mode with user config ignored, no shell or web tools,
 and ephemeral sessions. The application sends prompts and role-preserving
 messages through stdin and reads only the final reply of a completed turn
 from JSON events. The dialog deadline is 20 seconds; the report deadline is
-180 seconds. Failure or empty output reaches the existing spoken fallback.
+10 minutes. HTTP report providers retain their 180-second per-attempt deadline.
+Failure or empty dialog output reaches the existing spoken fallback.
 Codex uses the CLI's output limit and has no application-level retry or model
 fallback; `TEMPERATURE`, `MAX_TOKENS` and `RETRIES` apply to HTTP providers.
 

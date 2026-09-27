@@ -561,6 +561,11 @@ func summarySpec(cfg *config.Config) llm.Spec {
 	s.MaxTokens = cfg.LLMSummaryMaxTokens
 	s.FallbackModels = cfg.LLMSummaryFallbackModels
 	s.Retry = withAttempts(summaryRetry, cfg.LLMSummaryRetries)
+	if s.Engine == llm.EngineCodex {
+		// A full translated dialog and analysis can exceed the HTTP deadline.
+		// The caller has already hung up, so allow the CLI time to finish.
+		s.Retry.Timeout = 10 * time.Minute
+	}
 	return s
 }
 
