@@ -132,8 +132,12 @@ Production settings are independent in
 `vault_german_trainer_psychologist_env`, rendered to
 `/etc/german-trainer/profiles/psychologist.env`. Engines, dialog/report models
 and STT remain independently configurable. Psychologist
-TTS uses Yandex SpeechKit v3 `livetts`, voice `sofia`, role `casual`, with native
-pause/accent/stress markup. Profile changes do not alter 555. The profile
+TTS uses ElevenLabs `eleven_v3_conversational`, voice Sarah
+(`EXAVITQu4vr4xnSDxMaL`), through the existing REST speech client. The API key is
+inherited from the base `.env`. `TTS_STYLE_TAGS=auto` enables the ElevenLabs v3
+audio tags and the Russian expression guide; tags reach synthesis and are
+removed from the transcript. The prompt uses feminine first-person forms.
+Profile changes do not alter 555. The profile
 explicitly configures the same report recipient. 777 uses the existing MixMonitor/audio delivery subroutine,
 as requested. Deploy profile assets first, then the narrowly tagged
 `asterisk_dialplan` task in Ansible. The default 555 route has no profile argument.
