@@ -21,6 +21,14 @@ func TestGuideLanguage(t *testing.T) {
 	}
 }
 
+func TestFreeformTagsMustBeEnglish(t *testing.T) {
+	d := elevenDialect()
+	got := d.Sanitize("[сочувственно] Понимаю. [гently] Да. [warmly] Хорошо.")
+	if got != "Понимаю. Да. [warmly] Хорошо." {
+		t.Fatalf("non-English tags reached synthesis: %q", got)
+	}
+}
+
 type captureSynth struct{ got string }
 
 func (s *captureSynth) Synthesize(text string) (string, []string, error) {

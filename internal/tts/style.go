@@ -133,7 +133,10 @@ func (d Dialect) allows(markup string) bool {
 	if strings.HasPrefix(markup, "[") {
 		name := tagName(body)
 		if d.freeform {
-			return name != ""
+			// Both freeform guides ask for English tags, yet the Russian
+			// profile still writes [сочувственно] or a mixed-script [гently]:
+			// words the engine may read aloud rather than perform.
+			return name != "" && isASCII(name)
 		}
 		return d.inline[name]
 	}
@@ -154,6 +157,15 @@ func tagName(s string) string {
 		}
 	}
 	return s
+}
+
+func isASCII(s string) bool {
+	for _, r := range s {
+		if r > unicode.MaxASCII {
+			return false
+		}
+	}
+	return true
 }
 
 // tidy closes the gaps a removed tag leaves behind, so the engine is not handed
