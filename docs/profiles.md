@@ -128,10 +128,17 @@ changed.
 ## Psychologist on 777
 
 `profiles/psychologist.env.example` defines the Russian scenario.
-`psychologist_skill.md` provides careful listening and questions without
-ordinary spoken advice or the trainer's two-to-three-sentence limit. Rare
-examples are explicitly hypothetical. Direct imminent danger retains a brief
-safety exception. The warm opening uses informal Russian and identifies the
+`psychologist_skill.md` asks for a lively conversation rather than a fixed
+"name the feeling, then ask a question" loop, which callers heard as robotic.
+Each reply picks what fits the moment: a direct answer, an opinion, a short
+reaction, a factual follow-up, a story or a reflected feeling. Feelings are
+named only when the caller talks about experiences and the guess adds
+something; a question is optional. An explicit request for an opinion or
+advice is answered directly. Advice may also come as a short, possibly
+invented story about "someone who called before"; the AI never claims clinical
+practice, and admits the story is a composite if asked. Unsolicited advice is
+still avoided. Direct imminent danger overrides all of this, stories included.
+The warm opening uses informal Russian and identifies the
 AI. It does not announce recording or the written report. The dialogue does
 not volunteer those technical details; it answers honestly if asked directly.
 
