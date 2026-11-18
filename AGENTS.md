@@ -2,6 +2,15 @@
 
 Guidance for coding agents working in this repository. Read the relevant implementation before changing call flow or provider behavior; the details below describe production constraints as well as code structure.
 
+## Project ID
+
+Shared-memory project ID: **`german-trainig`** — the Git repository name (`semelyanov86/german-trainig`), spelling included. It is not the Go module name (`german-trainer`) or the server paths (`/opt/german-trainer`, `/etc/german-trainer`).
+
+- Root entity: `Project:german-trainig`
+- Components: `<Type>:german-trainig:<Name>`, e.g. `Module:german-trainig:STT`, `Decision:german-trainig:NeverSilentCaller`, `Bug:german-trainig:Outage20260819`
+- Provenance prefix on observations: `[Code verified <date> @ <commit>]`, `[Documented]`, `[Historical <date>]` or `[Unverified]`
+- Production deployment (Ansible role, vault, dialplan) belongs to the infrastructure project `serv-infrastracture` (`Service:serv-infrastracture:GermanTrainer`). Link to it with a relation instead of copying its facts here.
+
 ## Working Rules
 
 - Keep the live caller informed during slow or failed operations. Preserve hold music through LLM and TTS work, and use the existing spoken fallback lines on failure.
