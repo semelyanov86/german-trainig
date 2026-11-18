@@ -47,7 +47,6 @@ There are no tests in this project.
 - `tts/` — `Synthesizer` interface with six backends: polza, openrouter, OpenAI, ElevenLabs, Piper (local), Yandex SpeechKit v3. Factory in `tts.go`, selected by `TTS_ENGINE` config. The openrouter backend accepts both JSON (`{"audio":…}`) and raw-bytes responses. Yandex uses the v3 REST gateway, joins streamed audio chunks, and ignores text-only chunks. `tts.New` returns the backend wrapped in the style filter, plus the expression-tag dialect its model understands (`style.go`, see below)
 - `session/` — Per-call session: generates nano-timestamp ID, manages history file and temp file cleanup
 - `skill/` — Strips YAML frontmatter from prompt markdown files
-- `farewell/` — Detects goodbye phrases to end conversation
 - `summary/` — Post-call analysis: calls the configured LLM provider with the summary system prompt, sends report to webhook
 
 **Prompt files (system prompts):** read at runtime from the paths in `SKILL_FILE` / `SUMMARY_SKILL_FILE`. `task install` deploys the repo's `SKILL.md` and `summary_skill.md` to `/etc/german-trainer/`. Prompt construction lives in the app (no server-side Claude skills / slash commands).
@@ -99,5 +98,6 @@ revision missing the Codex provider is refused before installing binaries.
 - Zero external Go dependencies (stdlib only, `go.mod` has no requires)
 - LLM access is HTTP (polza.ai or openrouter.ai, both OpenAI-compatible) by default; Claude Code CLI subprocess is a switchable fallback
 - Config is file-based (`/etc/german-trainer/.env`), not environment variables
+- Caller text never triggers a hangup, including goodbye phrases. Legacy `FAREWELL_*` settings are ignored; callers hang up themselves, with the existing turn limit and failure guards still enforced.
 - All TTS engines convert to WAV (8kHz mono) for Asterisk playback via ffmpeg
 - Session cleanup removes both history and all temp audio files on call end

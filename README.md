@@ -56,7 +56,6 @@ internal/
     codex.go                  — LLM via Codex CLI (GPT-6 Luna)
   session/session.go          — call session, history, cleanup
   skill/skill.go              — skill file frontmatter parser
-  farewell/farewell.go        — farewell phrase detection
 deploy/agi_wrapper.c          — setuid wrapper for Asterisk
 asterisk/extensions_german.conf — dialplan fragment
 skill.md                      — German tutor personality prompt
@@ -357,4 +356,4 @@ mistral-medium-3-5 from 0.7s to 6.2s. Leave it empty unless the model needs it.
 4. **Transcribe** → sends audio to Groq Whisper API (~0.5s)
 5. **Respond** → music plays through transcription, LLM response and TTS synthesis, then the audio plays
 6. **Repeat** → up to 25 turns per call
-7. **End** → farewell detection or hangup triggers cleanup (history + temp files deleted)
+7. **End** → caller hangup, the turn limit or a terminal failure triggers cleanup (history + temp files deleted). Goodbye phrases are ordinary dialog input and never trigger a hangup.

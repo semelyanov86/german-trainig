@@ -14,7 +14,6 @@ import (
 	"german-trainer/internal/agi"
 	"german-trainer/internal/config"
 	"german-trainer/internal/diaglog"
-	"german-trainer/internal/farewell"
 	"german-trainer/internal/llm"
 	"german-trainer/internal/session"
 	"german-trainer/internal/skill"
@@ -101,7 +100,11 @@ func main() {
 		logger = log.New(diaglog.Writer{Output: lf, ProfileID: cfg.ProfileID}, "", log.LstdFlags)
 	}
 
-	ch := agi.NewChannel(os.Stdin, os.Stdout, logger)
+	runCall(cfg, logger, os.Stdin, os.Stdout)
+}
+
+func runCall(cfg *config.Config, logger *log.Logger, input io.Reader, output io.Writer) {
+	ch := agi.NewChannel(input, output, logger)
 	ch.ReadVars()
 	call := newCallDiagnostics(logger, ch.Vars["agi_uniqueid"])
 	defer call.finish(ch)
@@ -110,6 +113,7 @@ func main() {
 
 	sess := session.New(cfg.HistoryDir, logger)
 	if !cfg.LogUtterances {
+		var err error
 		sess, err = session.NewPrivate(cfg.HistoryDir, logger)
 		if err != nil {
 			call.reason = "session_error"
@@ -348,23 +352,6 @@ func main() {
 			logger.Printf("User said: %s", userText)
 		}
 
-		if isFarewell(userText, cfg) {
-			logger.Println("Farewell detected")
-			sess.WriteHistory("User", userText)
-			call.stage = "farewell_llm"
-			fw, err := dialog.Call(sess.ReadHistory(), userText)
-			if err != nil || strings.TrimSpace(fw) == "" {
-				logger.Printf("WARN farewell reply unavailable (%v), using the fixed line", err)
-				fw = cfg.FarewellLine
-			}
-			writePreparedReply(sess, cfg.HistoryRole, fw)
-			call.stage = "farewell_playback"
-			if playTTS(ch, sess, synthesizer, fw, logger) {
-				call.reason = "farewell"
-			}
-			break
-		}
-
 		sess.WriteHistory("User", userText)
 
 		history := sess.ReadHistory()
@@ -516,13 +503,6 @@ func newSummarizer(cfg *config.Config, prompt string, logger *log.Logger) *summa
 	provider := llm.New(summarySpec(cfg), logger)
 	return summary.NewWithReportPolicy(provider, prompt, cfg.NotifyWebhookURL, cfg.NotifyWebhookToken,
 		summary.Policy{Mode: cfg.SummaryMode, Prefix: cfg.SummaryPrefix, LogContent: cfg.LogUtterances}, logger)
-}
-
-func isFarewell(text string, cfg *config.Config) bool {
-	if cfg.FarewellMode == "utterance" {
-		return farewell.IsUtterance(text, cfg.FarewellPhrases)
-	}
-	return farewell.ContainsForLanguage(text, cfg.FarewellPhrases, cfg.Language)
 }
 
 func baseLLMSpec(cfg *config.Config) llm.Spec {

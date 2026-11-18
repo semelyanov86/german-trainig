@@ -24,10 +24,8 @@ SKILL_FILE=/etc/german-trainer/support_skill.md
 GREETING_PROMPT=Начни разговор и поприветствуй собеседника.
 SILENCE_PROMPT=Попроси собеседника сказать что-нибудь.
 SILENCE_LINE=Я вас не слышу. Скажите, пожалуйста, что-нибудь.
-FAREWELL_LINE=До свидания.
 GLITCH_LINE=Извините, возникла техническая ошибка. Повторите, пожалуйста.
 OUTAGE_LINE=Извините, сервис сейчас недоступен. Позвоните позже.
-FAREWELL_PHRASES=до свидания,всего доброго
 HISTORY_ROLE=Ассистент
 SUMMARY_ENABLED=false
 LOG_UTTERANCES=false
@@ -45,17 +43,15 @@ profile. `auto` omits the language field. The German profile retains its old
 `CUSTOM_STT_LANGUAGE` value and defaults to `de` when absent. For a themed
 profile, set both `THEMES_FILE` and `THEME_PROMPT` with `{theme}` at the desired
 insertion point. Without a themes file, `GREETING_PROMPT` is used directly.
-`FAREWELL_PHRASES` is a comma-separated list; `FAREWELL_LINE` is the fixed
-fallback when the model cannot answer a farewell. The silence, glitch and
-outage lines are also fixed spoken fallbacks.
-Use unambiguous farewell phrases. Russian detection requires word boundaries;
-the German profile retains its historical substring matching.
+The silence, glitch and outage lines are fixed spoken fallbacks.
+Caller text, including goodbye phrases, is always ordinary dialog input and
+never triggers a hangup. The caller ends the call; the existing turn limit and
+failure guards still apply. Legacy `FAREWELL_PHRASES`, `FAREWELL_LINE` and
+`FAREWELL_MODE` settings are ignored and can be removed from existing configs.
 
 `MAX_RECORD_SECONDS` limits one caller utterance (1–900 seconds); its default
 remains 150 for the trainer. Silence of five seconds or `#` ends it earlier.
-`FAREWELL_MODE=utterance` requires a whole closing utterance and protects long
-stories containing quoted farewells. The default `phrase` keeps existing
-language-specific matching. `GREETING_NOTICE`, when set, is prepended verbatim
+`GREETING_NOTICE`, when set, is prepended verbatim
 to the generated greeting, providing a caller notice independently of the LLM.
 
 `SUMMARY_ENABLED=false` skips report model creation, report generation and
@@ -118,7 +114,7 @@ appropriate ownership and permissions from `roles/german_trainer`, and add
 the new extension in `roles/asterisk`. Choose and review the report recipient,
 recording/send policy, provider data flow, transcript retention and caller
 notice before routing any calls. Crisis handling belongs after STT and the
-silence/noise guard, before farewell detection and the ordinary LLM turn in
+silence/noise guard, before the ordinary LLM turn in
 `cmd/german_trainer/main.go`; its escalation rules and human/emergency
 handoff need a separate design before a support profile goes live.
 The current Claude CLI backend passes the conversation in a process argument;

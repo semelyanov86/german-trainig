@@ -42,7 +42,7 @@ func TestLegacyCallAndNamedProfile(t *testing.T) {
 	if legacy.ProfileID != "german" || legacy.SkillFile != "/legacy/skill.md" || legacy.ThemesFile != "/legacy/themes.txt" || legacy.CustomSTTLanguage != "auto" || legacy.STTLanguage != "de" || legacy.LLMModel != "legacy-model" || legacy.OpenRouterTTSVoice != "legacy-voice" || !legacy.SummaryEnabled || !legacy.LogUtterances {
 		t.Fatalf("legacy settings changed: %+v", legacy)
 	}
-	if legacy.GreetingPrompt != "Starte ein neues Gespräch. Begrüße den Anrufer und schlage ein Thema vor." || legacy.SilenceLine != "Ich höre nichts. Sag bitte etwas!" || legacy.FarewellLine != "Tschüss! Bis zum nächsten Mal!" {
+	if legacy.GreetingPrompt != "Starte ein neues Gespräch. Begrüße den Anrufer und schlage ein Thema vor." || legacy.SilenceLine != "Ich höre nichts. Sag bitte etwas!" {
 		t.Fatalf("legacy German lines changed: %+v", legacy)
 	}
 	if _, err := LoadProfile(base, "../../etc/passwd"); err == nil {
@@ -56,7 +56,7 @@ func TestLegacyCallAndNamedProfile(t *testing.T) {
 	}
 
 	profile := filepath.Join(dir, "profiles", "support.env")
-	write(t, profile, "LANGUAGE=ru\nSKILL_FILE=/private/support.md\nGREETING_PROMPT=Начни разговор.\nSILENCE_PROMPT=Попроси собеседника говорить.\nSILENCE_LINE=Я вас не слышу.\nFAREWELL_LINE=До свидания.\nGLITCH_LINE=Повторите, пожалуйста.\nOUTAGE_LINE=Позвоните позже.\nFAREWELL_PHRASES=пока,до свидания\nHISTORY_ROLE=Собеседник\nLLM_MODEL=private-model\nOPENROUTER_TTS_VOICE=private-voice\n")
+	write(t, profile, "LANGUAGE=ru\nSKILL_FILE=/private/support.md\nGREETING_PROMPT=Начни разговор.\nSILENCE_PROMPT=Попроси собеседника говорить.\nSILENCE_LINE=Я вас не слышу.\nGLITCH_LINE=Повторите, пожалуйста.\nOUTAGE_LINE=Позвоните позже.\nHISTORY_ROLE=Собеседник\nLLM_MODEL=private-model\nOPENROUTER_TTS_VOICE=private-voice\n")
 	private, err := LoadProfile(base, "support")
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestPsychologistConfigurationIsIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if psychologist.MaxRecordSeconds != 420 || psychologist.SummaryMode != "transcript_advice" || psychologist.FarewellMode != "utterance" || psychologist.Language != "ru" || psychologist.STTLanguage != "ru" || psychologist.CustomSTTLanguage != "ru" {
+	if psychologist.MaxRecordSeconds != 420 || psychologist.SummaryMode != "transcript_advice" || psychologist.Language != "ru" || psychologist.STTLanguage != "ru" || psychologist.CustomSTTLanguage != "ru" {
 		t.Fatalf("incorrect psychologist behavior: %+v", psychologist.Scenario)
 	}
 	if psychologist.LogUtterances || !psychologist.SummaryEnabled || psychologist.GreetingNotice == "" || psychologist.TTSStyleTags != "auto" || psychologist.LLMModel != "psychologist-model" || psychologist.LLMSummaryModel != "psychologist-summary" {
@@ -109,7 +109,7 @@ func TestPsychologistConfigurationIsIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if trainer.LLMModel != "trainer-model" || trainer.LLMSummaryModel != "trainer-summary" || trainer.MaxRecordSeconds != 120 || trainer.SummaryMode != "analysis" || trainer.FarewellMode != "phrase" {
+	if trainer.LLMModel != "trainer-model" || trainer.LLMSummaryModel != "trainer-summary" || trainer.MaxRecordSeconds != 120 || trainer.SummaryMode != "analysis" {
 		t.Fatal("psychologist configuration affected the German trainer")
 	}
 	if trainer.TTSEngine != "openrouter" || trainer.OpenRouterTTSModel != "x-ai/grok-voice-tts-1.0" || trainer.YandexToken != "" {
@@ -123,7 +123,7 @@ func TestPsychologistConfigurationIsIndependent(t *testing.T) {
 }
 
 func TestRejectInvalidConversationPolicy(t *testing.T) {
-	for _, env := range []string{"MAX_RECORD_SECONDS=0", "MAX_RECORD_SECONDS=-1", "MAX_RECORD_SECONDS=901", "MAX_RECORD_SECONDS=9999999999999999999999999", "MAX_RECORD_SECONDS=seven", "SUMMARY_MODE=unknown", "FAREWELL_MODE=unknown"} {
+	for _, env := range []string{"MAX_RECORD_SECONDS=0", "MAX_RECORD_SECONDS=-1", "MAX_RECORD_SECONDS=901", "MAX_RECORD_SECONDS=9999999999999999999999999", "MAX_RECORD_SECONDS=seven", "SUMMARY_MODE=unknown"} {
 		path := filepath.Join(t.TempDir(), ".env")
 		write(t, path, env)
 		if _, err := Load(path); err == nil {

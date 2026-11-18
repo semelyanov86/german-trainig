@@ -22,17 +22,14 @@ type Scenario struct {
 	ThemePrompt      string // {theme} is replaced with the selected theme
 	SilencePrompt    string
 	SilenceLine      string
-	FarewellLine     string
 	GlitchLine       string
 	OutageLine       string
-	FarewellPhrases  []string
 	HistoryRole      string
 	SummaryEnabled   bool
 	SummaryPrefix    string
 	LogUtterances    bool
 	MaxRecordSeconds int    // maximum length of one caller utterance
 	SummaryMode      string // analysis or transcript_advice
-	FarewellMode     string // phrase or utterance
 }
 
 type Config struct {
@@ -231,13 +228,12 @@ func LoadProfile(path, id string) (*Config, error) {
 	cfg.NotifyWebhookURL, cfg.NotifyWebhookToken, cfg.SummaryPrefix = "", "", ""
 	cfg.GreetingPrompt, cfg.ThemePrompt, cfg.SilencePrompt = "", "", ""
 	cfg.GreetingNotice = ""
-	cfg.SilenceLine, cfg.FarewellLine, cfg.GlitchLine, cfg.OutageLine = "", "", "", ""
-	cfg.FarewellPhrases = nil
+	cfg.SilenceLine, cfg.GlitchLine, cfg.OutageLine = "", "", ""
 	cfg.HistoryRole = ""
 	cfg.SummaryEnabled = false
 	cfg.LogUtterances = false
 	cfg.MaxRecordSeconds = 0
-	cfg.SummaryMode, cfg.FarewellMode = "", ""
+	cfg.SummaryMode = ""
 	profilePath := filepath.Join(filepath.Dir(path), "profiles", id+".env")
 	if err := applyFile(cfg, profilePath); err != nil {
 		return nil, err
@@ -250,7 +246,7 @@ func LoadProfile(path, id string) (*Config, error) {
 	if cfg.Language != "ru" && cfg.Language != "de" {
 		return nil, fmt.Errorf("profile %q: LANGUAGE must be de or ru", id)
 	}
-	if cfg.SkillFile == "" || cfg.GreetingPrompt == "" || cfg.SilencePrompt == "" || cfg.SilenceLine == "" || cfg.FarewellLine == "" || cfg.GlitchLine == "" || cfg.OutageLine == "" || cfg.HistoryRole == "" || len(cfg.FarewellPhrases) == 0 {
+	if cfg.SkillFile == "" || cfg.GreetingPrompt == "" || cfg.SilencePrompt == "" || cfg.SilenceLine == "" || cfg.GlitchLine == "" || cfg.OutageLine == "" || cfg.HistoryRole == "" {
 		return nil, fmt.Errorf("profile %q: required scenario settings are missing", id)
 	}
 	if cfg.ThemesFile != "" && cfg.ThemePrompt == "" {
@@ -306,14 +302,10 @@ func applyFile(cfg *Config, path string) error {
 			cfg.SilencePrompt = val
 		case "SILENCE_LINE":
 			cfg.SilenceLine = val
-		case "FAREWELL_LINE":
-			cfg.FarewellLine = val
 		case "GLITCH_LINE":
 			cfg.GlitchLine = val
 		case "OUTAGE_LINE":
 			cfg.OutageLine = val
-		case "FAREWELL_PHRASES":
-			cfg.FarewellPhrases = splitModels(val)
 		case "HISTORY_ROLE":
 			cfg.HistoryRole = val
 		case "SUMMARY_ENABLED":
@@ -333,11 +325,6 @@ func applyFile(cfg *Config, path string) error {
 				return fmt.Errorf("SUMMARY_MODE must be analysis or transcript_advice")
 			}
 			cfg.SummaryMode = val
-		case "FAREWELL_MODE":
-			if val != "phrase" && val != "utterance" {
-				return fmt.Errorf("FAREWELL_MODE must be phrase or utterance")
-			}
-			cfg.FarewellMode = val
 		case "GROQ_API_KEY":
 			cfg.GroqAPIKey = val
 		case "ELEVENLABS_API_KEY":
@@ -479,9 +466,6 @@ func defaults(cfg *Config) {
 	if cfg.SummaryMode == "" {
 		cfg.SummaryMode = "analysis"
 	}
-	if cfg.FarewellMode == "" {
-		cfg.FarewellMode = "phrase"
-	}
 	if cfg.CodexBin == "" {
 		cfg.CodexBin = "/usr/local/bin/codex"
 	}
@@ -564,17 +548,11 @@ func defaults(cfg *Config) {
 		if cfg.SilenceLine == "" {
 			cfg.SilenceLine = "Ich höre nichts. Sag bitte etwas!"
 		}
-		if cfg.FarewellLine == "" {
-			cfg.FarewellLine = "Tschüss! Bis zum nächsten Mal!"
-		}
 		if cfg.GlitchLine == "" {
 			cfg.GlitchLine = "Entschuldigung, ich habe gerade ein technisches Problem. Sag das bitte noch einmal."
 		}
 		if cfg.OutageLine == "" {
 			cfg.OutageLine = "Es tut mir leid, mein System antwortet im Moment nicht. Ruf bitte später noch einmal an. Tschüss!"
-		}
-		if len(cfg.FarewellPhrases) == 0 {
-			cfg.FarewellPhrases = []string{"tschüss", "tschüs", "tschuss", "auf wiedersehen", "auf wiederhören", "bye", "goodbye", "ciao", "bis bald", "bis dann", "mach's gut", "machs gut"}
 		}
 		if cfg.HistoryRole == "" {
 			cfg.HistoryRole = "Tutor"

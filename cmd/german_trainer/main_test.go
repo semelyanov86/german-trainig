@@ -115,30 +115,6 @@ func TestProfileSelectionAndSpeechGuard(t *testing.T) {
 	}
 }
 
-func TestPsychologistFarewellDoesNotInterruptStories(t *testing.T) {
-	cfg := &config.Config{Scenario: config.Scenario{Language: "ru", FarewellMode: "utterance", FarewellPhrases: []string{"до свидания", "спасибо до свидания"}}}
-	for _, tc := range []struct {
-		text string
-		want bool
-	}{
-		{"До свидания!", true},
-		{"Спасибо, до свидания.", true},
-		{"Начальник сказал до свидания, и я потерял работу.", false},
-		{"Я не хочу говорить до свидания.", false},
-		{"«До свидания»", false},
-		{"Сейчас причиню себе вред. До свидания.", false},
-		{"Мне пока плохо, не знаю, что делать.", false},
-	} {
-		if got := isFarewell(tc.text, cfg); got != tc.want {
-			t.Errorf("isFarewell(%q)=%v, want %v", tc.text, got, tc.want)
-		}
-	}
-	legacy := &config.Config{Scenario: config.Scenario{Language: "de", FarewellPhrases: []string{"tschüss"}}}
-	if !isFarewell("Okay, tschüss!", legacy) {
-		t.Fatal("German farewell behavior changed")
-	}
-}
-
 func TestDisabledReportBuildsNoSummarizer(t *testing.T) {
 	cfg := &config.Config{Scenario: config.Scenario{SummaryEnabled: false}}
 	if got := newSummarizer(cfg, "unused", log.New(io.Discard, "", 0)); got != nil {
