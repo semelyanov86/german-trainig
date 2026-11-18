@@ -63,6 +63,8 @@ func (d Dialect) GuideFor(language string) string {
 Используй только квадратные скобки; XML, SSML и Markdown не нужны.`
 	case "yandex":
 		return yandexGuide
+	case "higgs":
+		return higgsGuideRU
 	default:
 		return ""
 	}
@@ -112,6 +114,9 @@ func stripMarkup(markup string) string {
 }
 
 func (d Dialect) allows(markup string) bool {
+	if d.Name == "higgs" {
+		return higgsTags[markup]
+	}
 	if d.Name == "yandex" {
 		if strings.HasPrefix(markup, "**") && strings.HasSuffix(markup, "**") && len(markup) > 4 {
 			return true
@@ -228,6 +233,8 @@ func DialectFor(engine string, cfg Config, logger *log.Logger) Dialect {
 		return elevenDialect()
 	case "yandex":
 		return Dialect{Name: "yandex", Guide: yandexGuide}
+	case "higgs":
+		return higgsDialect()
 	default:
 		// A typo must not hand the caller a reply full of spoken brackets, so
 		// an unrecognised value falls back to plain text rather than guessing.
@@ -236,6 +243,8 @@ func DialectFor(engine string, cfg Config, logger *log.Logger) Dialect {
 	}
 
 	switch engine {
+	case "custom":
+		return higgsDialect()
 	case "yandex":
 		return Dialect{Name: "yandex", Guide: yandexGuide}
 	case "openrouter":
@@ -383,3 +392,74 @@ Regeln:
 - Tags ersetzen keine Wörter: ohne sie muss der Satz vollständig dastehen.
 - Nur eckige Klammern. Spitze Klammern und Sternchen werden gelöscht.
 - Deine Frage am Schluss bleibt normal gesprochen.`
+
+// higgsDialect — our own Higgs TTS server (TTS_ENGINE=custom). Its tags read
+// <|category:name|> and form a closed list: the server answers 400
+// unsupported_tag to anything else rather than reading it out, so the filter
+// keeps exactly the tags it accepts. long_pause is missing on purpose: the
+// server rejects it, after measuring pauses of 0.3 to 9 seconds with it.
+func higgsDialect() Dialect {
+	return Dialect{Name: "higgs", Guide: higgsGuide}
+}
+
+var higgsTags = func() map[string]bool {
+	tags := map[string][]string{
+		"emotion": {"anger", "sadness", "elation", "enthusiasm", "amusement", "affection", "surprise",
+			"fear", "relief", "confusion", "contemplation", "contentment", "determination", "disgust",
+			"helplessness", "longing", "pride", "shame", "bitterness", "awe", "arousal"},
+		"style": {"whispering", "shouting", "singing"},
+		"prosody": {"speed_slow", "speed_very_slow", "speed_fast", "speed_very_fast", "pitch_low",
+			"pitch_high", "expressive_high", "expressive_low", "pause"},
+		"sfx": {"laughter", "cough", "sigh", "crying", "screaming", "humming", "sniff", "sneeze", "burping"},
+	}
+	set := map[string]bool{}
+	for category, names := range tags {
+		for _, name := range names {
+			set["<|"+category+":"+name+"|>"] = true
+		}
+	}
+	return set
+}()
+
+const higgsGuide = `## Stimme und Emotion
+
+Deine Antwort geht an eine Sprachausgabe, die Regie-Tags der Form <|kategorie:name|>
+versteht: sie werden nicht vorgelesen, sondern gespielt. **Setze in jede Antwort ein Tag**
+— zwei, wenn die Antwort wirklich zwei Momente hat, nie mehr als zwei. Ohne Tag klingt
+deine Stimme flach, und genau das ist der Grund, warum es diesen Abschnitt gibt.
+
+1. Stimmung, Stil und Tempo stehen direkt am Anfang eines Satzes und färben den ganzen Satz:
+<|emotion:amusement|> <|emotion:surprise|> <|emotion:enthusiasm|> <|emotion:confusion|>
+<|emotion:contemplation|> <|emotion:determination|> <|emotion:affection|> <|emotion:relief|>
+<|emotion:sadness|> <|emotion:anger|> <|emotion:disgust|> <|emotion:pride|>
+<|style:whispering|> <|style:shouting|>
+<|prosody:speed_slow|> <|prosody:speed_fast|> <|prosody:pitch_low|> <|prosody:pitch_high|>
+<|prosody:expressive_high|> <|prosody:expressive_low|>
+
+2. Laute und Pausen stehen genau an der Stelle im Satz, an der sie klingen:
+<|sfx:laughter|> <|sfx:sigh|> <|sfx:cough|> <|sfx:humming|> <|prosody:pause|>
+Direkt nach einem Laut-Tag, ohne Leerzeichen, folgt das passende Lautwort und dann der Satz:
+<|sfx:laughter|>Haha, … oder <|sfx:sigh|>Haah, …
+
+So sieht das aus:
+<|emotion:amusement|>Ach komm, das glaubst du doch selbst nicht. Was war wirklich los?
+<|sfx:laughter|>Haha, sehr bequem. Was müsste passieren, damit du aufstehst?
+<|style:whispering|>Das sage ich nur einmal. Du windest dich. Warum eigentlich?
+Das klingt nach einem langen Tag. <|prosody:pause|> Was hat dich am meisten genervt?
+
+Regeln:
+- Nur Tags aus diesen Listen, genau so geschrieben: <| am Anfang, |> am Ende, englische Namen.
+  Alles andere in eckigen oder spitzen Klammern wird vor der Ausgabe gelöscht.
+- Tags ersetzen keine Wörter: ohne sie muss der Satz vollständig dastehen.
+- Nie zwei Pausen hintereinander, kein Tag am Ende der Antwort.
+- Deine Frage am Schluss bleibt normal gesprochen.`
+
+const higgsGuideRU = `## Голос и эмоции
+
+Ответ озвучит голосовой движок, который понимает теги вида <|категория:название|>: они не произносятся, а задают звучание. Произносимый текст остаётся по-русски, теги пишутся точно как в списке, по-английски.
+Используй один, максимум два уместных тега на ответ и выбирай их по смыслу конкретного момента и роли собеседника.
+Окраска всего предложения — тег в самом начале предложения:
+<|emotion:affection|> теплота, <|emotion:contemplation|> задумчивость, <|emotion:relief|> облегчение, <|emotion:sadness|> грусть, <|emotion:contentment|> спокойное довольство, <|emotion:surprise|> удивление, <|emotion:amusement|> весёлость, <|emotion:determination|> решимость, <|prosody:speed_slow|> медленнее, <|prosody:expressive_low|> сдержанно.
+Звук или пауза — тег прямо в том месте фразы, где они звучат: <|prosody:pause|> короткая пауза, <|sfx:sigh|> вздох, <|sfx:laughter|> смех. Сразу после тега звука, без пробела, напиши звукоподражание: <|sfx:sigh|>Ох, … или <|sfx:laughter|>Ха-ха, …
+Пример: <|emotion:affection|>Похоже, тебе сейчас очень непросто. <|prosody:pause|> Что тревожит тебя сильнее всего?
+Выражай эмоцию естественно и соблюдай инструкцию роли: тег не повод изображать неуместный смех или театральные переживания. Не ставь две паузы подряд и не ставь тег в конце ответа. Других тегов, квадратных скобок, SSML и Markdown нет. Без тегов реплика должна оставаться полной и понятной.`

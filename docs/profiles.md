@@ -147,11 +147,13 @@ Production settings are independent in
 `vault_german_trainer_psychologist_env`, rendered to
 `/etc/german-trainer/profiles/psychologist.env`. Engines, dialog/report models
 and STT remain independently configurable. Psychologist
-TTS uses ElevenLabs `eleven_v3_conversational`, voice Sarah
-(`EXAVITQu4vr4xnSDxMaL`), through the existing REST speech client. The API key is
-inherited from the base `.env`. `TTS_STYLE_TAGS=auto` enables the ElevenLabs v3
-audio tags and the Russian expression guide; tags reach synthesis and are
-removed from the transcript. The prompt uses feminine first-person forms.
+TTS uses our own Higgs server (`TTS_ENGINE=custom`, voice `female`), whose URL
+and token are inherited from the base `.env`; Russian text is read fine with its
+only declared language, `de-DE`. `TTS_FALLBACK_ENGINE=elevenlabs` keeps
+ElevenLabs `eleven_v3_conversational`, voice Sarah (`EXAVITQu4vr4xnSDxMaL`), as
+the voice of a call the server cannot take or fails in. `TTS_STYLE_TAGS=auto`
+enables the Higgs `<|category:name|>` tags and their Russian guide; tags reach
+synthesis and are removed from the transcript. The prompt uses feminine first-person forms.
 Profile changes do not alter 555. The profile
 explicitly configures the same report recipient. 777 uses the existing MixMonitor/audio delivery subroutine,
 as requested. Deploy profile assets first, then the narrowly tagged

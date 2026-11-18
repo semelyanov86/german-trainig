@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -168,8 +169,10 @@ func numField(resp, name string) (int, bool) {
 	return n, true
 }
 
-func (c *Channel) PlayAudio(wavPath string) string {
-	base := strings.TrimSuffix(wavPath, ".wav")
+// PlayAudio streams an audio file to the caller. Asterisk takes the name without
+// its extension and picks the format from the files it finds (.wav, .sln).
+func (c *Channel) PlayAudio(path string) string {
+	base := strings.TrimSuffix(path, filepath.Ext(path))
 	return c.Cmd(fmt.Sprintf("STREAM FILE %s \"\"", base))
 }
 

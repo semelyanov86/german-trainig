@@ -7,7 +7,7 @@ deployment are managed by Ansible.
 Asterisk AGI application for practicing spoken German through phone calls.
 
 ```
-User calls → Asterisk AGI → STT (Groq/polza/openrouter) → LLM (polza/openrouter/Claude CLI/Codex CLI) → TTS (polza/openrouter/OpenAI/ElevenLabs/Piper/Yandex) → audio back to user
+User calls → Asterisk AGI → STT (Groq/polza/openrouter) → LLM (polza/openrouter/Claude CLI/Codex CLI) → TTS (own Higgs server/polza/openrouter/OpenAI/ElevenLabs/Piper/Yandex) → audio back to user
 ```
 
 ## Prerequisites
@@ -41,6 +41,9 @@ internal/
     openrouter.go             — Speech-to-Text via openrouter.ai
   tts/
     tts.go                    — TTS interface, factory and the style filter
+    voice.go                  — per-call voice: playable pieces, fallback engine
+    custom.go                 — own Higgs TTS server: call sessions, NDJSON stream
+    resample.go               — 24→8 kHz low-pass decimator for streamed PCM
     style.go                  — expression-tag dialect per TTS model
     openai.go                 — OpenAI cloud TTS
     elevenlabs.go             — ElevenLabs cloud TTS
@@ -208,6 +211,7 @@ Edit `TTS_ENGINE` in `/etc/german-trainer/.env`:
 | `piper` | Piper (local) | Free, no API needed, runs offline. Requires piper-tts + voice model |
 | `polza` | polza.ai | OpenAI-compatible. Model via `POLZA_TTS_MODEL`, voice `POLZA_TTS_VOICE`, key `POLZA_API_KEY` |
 | `openrouter` | openrouter.ai | OpenAI-compatible. Model via `OPENROUTER_TTS_MODEL`, voice `OPENROUTER_TTS_VOICE`, key `OPENROUTER_API_KEY` |
+| `custom` | own Higgs server | Streams PCM; playback starts after ~1s. `CUSTOM_TTS_URL`, `CUSTOM_TTS_TOKEN`, `CUSTOM_TTS_VOICE` (`female`/`male`); `TTS_FALLBACK_ENGINE` takes over when it fails |
 | `yandex` | Yandex SpeechKit v3 | REST gateway of the gRPC API; `YANDEX_TOKEN`, `YANDEX_TTS_MODEL`, `YANDEX_TTS_VOICE`, `YANDEX_TTS_ROLE` |
 
 For Russian psychologist calls on 777, configure its independent profile:
@@ -248,6 +252,7 @@ its vocabulary is appended to the tutor system prompt at startup:
 | `grok` + `tts` | grok | 12 inline sounds (`[laugh]`, `[sigh]`, `[pause]`, …) plus 12 wrapping styles (`<whisper>…</whisper>`, `<slow>`, `<angry>`, …) |
 | `gemini` + `tts` | gemini | any descriptive word in square brackets (`[sarcastically]`, `[giggles]`, `[very fast]`) |
 | ElevenLabs `v3` | elevenlabs | audio tags in square brackets (`[laughs]`, `[whispers]`, `[sarcastic]`) |
+| `TTS_ENGINE=custom` | higgs | closed list of `<\|category:name\|>` tags: emotions and styles at the start of a sentence, `<\|sfx:laughter\|>Haha,` sounds and `<\|prosody:pause\|>` inline; no `long_pause` |
 | `TTS_ENGINE=yandex` | yandex | native pauses `<[tiny]>` through `<[huge]>`, `sil<[300]>`; word accent `<[accented]>` / `**word**`; vowel stress `зам+ок` |
 | anything else | off | none — the model is told to write plain text |
 

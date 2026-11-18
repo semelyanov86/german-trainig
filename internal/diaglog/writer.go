@@ -11,6 +11,8 @@ import (
 var httpStatus = regexp.MustCompile(`\bHTTP ([1-5][0-9][0-9])\b`)
 var sttFallbackAttempt = regexp.MustCompile(`(?s)\bWARN (Custom|Groq|Polza|OpenRouter) STT failed .*falling back to (Custom|Groq|Polza|OpenRouter)\s*$`)
 var sttFallbackAnswered = regexp.MustCompile(`\b(Custom|Groq|Polza|OpenRouter) STT answered instead of (Custom|Groq|Polza|OpenRouter)\s*$`)
+var ttsFallback = regexp.MustCompile(`(?s)\bWARN TTS ([a-z]+) (failed|rejected this reply|has no place for this call) .*through ([a-z]+)\s*$`)
+var ttsFallbackOutcome = map[string]string{"failed": "switch", "rejected this reply": "reply", "has no place for this call": "no_place"}
 var safeProgress = regexp.MustCompile(`^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} (Summary: generated \d+ chars|Summary: webhook sent, status 2\d\d|Cleanup complete|Private session started)\n$`)
 
 // The complete event must match. An appended transcript, URL or provider error
@@ -47,11 +49,13 @@ func (w Writer) Write(p []byte) (int, error) {
 		_, err := fmt.Fprintf(w.Output, "%s profile=%s: STT fallback primary=%s fallback=%s outcome=answered\n", time.Now().Format("2006/01/02 15:04:05"), w.ProfileID, m[2], m[1])
 		return len(p), err
 	}
+	if m := ttsFallback.FindStringSubmatch(line); len(m) == 4 {
+		status := statusSuffix(line)
+		_, err := fmt.Fprintf(w.Output, "%s profile=%s: TTS fallback primary=%s fallback=%s outcome=%s kind=%s%s\n", time.Now().Format("2006/01/02 15:04:05"), w.ProfileID, m[1], m[3], ttsFallbackOutcome[m[2]], failureKind(line, status), status)
+		return len(p), err
+	}
 	if m := sttFallbackAttempt.FindStringSubmatch(line); len(m) == 3 {
-		status := ""
-		if code := httpStatus.FindStringSubmatch(line); len(code) == 2 {
-			status = " HTTP=" + code[1]
-		}
+		status := statusSuffix(line)
 		_, err := fmt.Fprintf(w.Output, "%s profile=%s: STT fallback primary=%s fallback=%s outcome=attempt kind=%s%s\n", time.Now().Format("2006/01/02 15:04:05"), w.ProfileID, m[1], m[2], failureKind(line, status), status)
 		return len(p), err
 	}
@@ -71,12 +75,17 @@ func (w Writer) Write(p []byte) (int, error) {
 			break
 		}
 	}
-	status := ""
-	if m := httpStatus.FindStringSubmatch(line); len(m) == 2 {
-		status = " HTTP=" + m[1]
-	}
+	status := statusSuffix(line)
 	_, err := fmt.Fprintf(w.Output, "%s profile=%s: %s provider=%s kind=%s%s\n", time.Now().Format("2006/01/02 15:04:05"), w.ProfileID, severity, provider, failureKind(line, status), status)
 	return len(p), err
+}
+
+// statusSuffix renders the HTTP status a failure line carries, if any.
+func statusSuffix(line string) string {
+	if m := httpStatus.FindStringSubmatch(line); len(m) == 2 {
+		return " HTTP=" + m[1]
+	}
+	return ""
 }
 
 func failureKind(line, status string) string {

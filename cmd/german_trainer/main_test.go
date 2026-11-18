@@ -16,6 +16,7 @@ import (
 	"german-trainer/internal/config"
 	"german-trainer/internal/llm"
 	"german-trainer/internal/session"
+	"german-trainer/internal/tts"
 )
 
 type finalTranscriber struct {
@@ -64,8 +65,80 @@ func TestFinalHangupRecordingIsIncludedWithSpeechGuards(t *testing.T) {
 
 type playbackSynth struct{ err error }
 
-func (s playbackSynth) Synthesize(string) (string, []string, error) {
-	return "/tmp/test-playback.wav", nil, s.err
+func (s playbackSynth) Speak(string) (tts.Audio, error) {
+	return &pieces{paths: []string{"/tmp/test-playback.wav"}}, s.err
+}
+
+// pieces is a reply handed out as several files, optionally breaking off
+// after the last one.
+type pieces struct {
+	paths   []string
+	err     error
+	stopped bool
+}
+
+func (p *pieces) Next() (string, error) {
+	if p.stopped || len(p.paths) == 0 {
+		return "", p.err
+	}
+	path := p.paths[0]
+	p.paths = p.paths[1:]
+	return path, nil
+}
+
+func (p *pieces) Files() []string { return nil }
+func (p *pieces) Stop()           { p.stopped = true }
+
+// brokenOnce is a streaming voice whose first reply breaks off mid-playback.
+type brokenOnce struct{ calls int }
+
+func (b *brokenOnce) Speak(string) (tts.Audio, error) {
+	b.calls++
+	if b.calls == 1 {
+		return &pieces{paths: []string{"/tmp/a_00.sln", "/tmp/a_01.sln"}, err: errors.New("reply incomplete")}, nil
+	}
+	return &pieces{paths: []string{"/tmp/b_00.sln", "/tmp/b_01.sln", "/tmp/b_02.sln"}}, nil
+}
+
+func TestStreamedReplyPlaysEveryPieceAndRepeatsABrokenOne(t *testing.T) {
+	logger := log.New(io.Discard, "", 0)
+	sess := session.New(t.TempDir(), logger)
+	sess.SpokenRole = "Tutor"
+	var sent bytes.Buffer
+	ch := agi.NewChannel(strings.NewReader(strings.Repeat("200 result=0 endpos=8000\n", 10)), &sent, logger)
+	voice := &brokenOnce{}
+	if !playTTS(ch, sess, voice, "<|emotion:amusement|>Ach komm.", logger) {
+		t.Fatal("channel reported dead")
+	}
+	want := []string{
+		"EXEC StopMusicOnHold", "STREAM FILE /tmp/a_00 \"\"", "STREAM FILE /tmp/a_01 \"\"",
+		"EXEC StartMusicOnHold " + mohClass,
+		"EXEC StopMusicOnHold", "STREAM FILE /tmp/b_00 \"\"", "STREAM FILE /tmp/b_01 \"\"", "STREAM FILE /tmp/b_02 \"\"",
+	}
+	if got := strings.Split(strings.TrimSpace(sent.String()), "\n"); strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("AGI commands:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if voice.calls != 2 {
+		t.Fatalf("reply requested %d times, want 2", voice.calls)
+	}
+	if got := sess.ReadHistory(); got != "Tutor: Ach komm.\n" {
+		t.Fatalf("spoken transcript: %q", got)
+	}
+}
+
+func TestHangupStopsAStreamedReply(t *testing.T) {
+	logger := log.New(io.Discard, "", 0)
+	sess := session.New(t.TempDir(), logger)
+	sess.SpokenRole = "Tutor"
+	var sent bytes.Buffer
+	ch := agi.NewChannel(strings.NewReader("HANGUP\n200 result=-1 endpos=100\n"), &sent, logger)
+	audio := &pieces{paths: []string{"/tmp/c_00.sln", "/tmp/c_01.sln", "/tmp/c_02.sln"}}
+	if heard, err := playAudio(ch, audio); heard || err != nil {
+		t.Fatalf("heard=%v err=%v after hangup", heard, err)
+	}
+	if !audio.stopped || strings.Count(sent.String(), "STREAM FILE") != 1 {
+		t.Fatalf("stream not stopped at hangup: %q", sent.String())
+	}
 }
 
 func TestSpokenTranscriptIncludesOnlyPlayedReplies(t *testing.T) {

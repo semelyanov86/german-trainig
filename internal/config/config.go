@@ -70,8 +70,19 @@ type Config struct {
 	YandexTTSModel      string // livetts or general
 	YandexTTSVoice      string
 	YandexTTSRole       string
-	TTSStyleTags        string // grok|gemini|elevenlabs|yandex|off|auto (see tts.DialectFor)
+	TTSStyleTags        string // grok|gemini|elevenlabs|yandex|higgs|off|auto (see tts.DialectFor)
 	ThemesFile          string
+
+	// The "custom" TTS engine: our own Higgs server, which streams PCM as
+	// NDJSON and reserves a place per call (see internal/tts/custom.go).
+	CustomTTSURL      string // CUSTOM_TTS_URL, base URL without the /api path
+	CustomTTSToken    string // CUSTOM_TTS_TOKEN, bearer token
+	CustomTTSVoice    string // CUSTOM_TTS_VOICE, female (default) or male
+	CustomTTSLanguage string // CUSTOM_TTS_LANGUAGE, de-DE (default, the only one served)
+
+	// TTS fallback. When the custom engine has no place for a call or fails in
+	// the middle of one, the rest of the call speaks through this engine.
+	TTSFallbackEngine string // TTS_FALLBACK_ENGINE, empty: no fallback
 
 	// The "custom" STT engine: any OpenAI-compatible audio/transcriptions
 	// endpoint, described entirely by config. In production this is the
@@ -343,6 +354,16 @@ func applyFile(cfg *Config, path string) error {
 			cfg.TTSEngine = val
 		case "TTS_STYLE_TAGS":
 			cfg.TTSStyleTags = val
+		case "TTS_FALLBACK_ENGINE":
+			cfg.TTSFallbackEngine = val
+		case "CUSTOM_TTS_URL":
+			cfg.CustomTTSURL = val
+		case "CUSTOM_TTS_TOKEN":
+			cfg.CustomTTSToken = val
+		case "CUSTOM_TTS_VOICE":
+			cfg.CustomTTSVoice = val
+		case "CUSTOM_TTS_LANGUAGE":
+			cfg.CustomTTSLanguage = val
 		case "YANDEX_TOKEN":
 			cfg.YandexToken = val
 		case "YANDEX_AUTH_TYPE":
@@ -524,6 +545,14 @@ func defaults(cfg *Config) {
 	// lost the turn either way.
 	if cfg.STTFallbackTimeout == 0 {
 		cfg.STTFallbackTimeout = 20 * time.Second
+	}
+	// The server serves one language and two voices; the language is still sent
+	// explicitly so a server that learns more of them gets told.
+	if cfg.CustomTTSVoice == "" {
+		cfg.CustomTTSVoice = "female"
+	}
+	if cfg.CustomTTSLanguage == "" {
+		cfg.CustomTTSLanguage = "de-DE"
 	}
 
 	// 64k is the model ceiling and twice the CLI default; the analysis plus its

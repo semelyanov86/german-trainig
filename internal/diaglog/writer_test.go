@@ -76,3 +76,24 @@ func TestCallEventWhitelistRejectsAppendedOrUnknownPayloads(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivateTTSFallbackNamesBothEngines(t *testing.T) {
+	var out bytes.Buffer
+	l := log.New(Writer{Output: &out, ProfileID: "psychologist"}, "", 0)
+	l.Println("WARN TTS custom failed (custom tts HTTP 503 engine_unavailable), the rest of the call speaks through openrouter")
+	l.Println("WARN TTS custom has no place for this call (custom tts timeout), the call speaks through elevenlabs")
+	l.Println("WARN TTS custom rejected this reply (custom tts HTTP 400 unsupported_tag секрет), speaking it through elevenlabs")
+	got := out.String()
+	for _, want := range []string{
+		"TTS fallback primary=custom fallback=openrouter outcome=switch kind=http HTTP=503",
+		"TTS fallback primary=custom fallback=elevenlabs outcome=no_place kind=timeout",
+		"TTS fallback primary=custom fallback=elevenlabs outcome=reply kind=http HTTP=400",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "секрет") || strings.Contains(got, "unsupported_tag") {
+		t.Fatalf("payload leaked: %q", got)
+	}
+}

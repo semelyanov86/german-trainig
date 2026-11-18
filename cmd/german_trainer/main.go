@@ -177,7 +177,7 @@ func runCall(cfg *config.Config, logger *log.Logger, input io.Reader, output io.
 		FallbackEngine:     cfg.STTFallbackEngine,
 		FallbackTimeout:    cfg.STTFallbackTimeout,
 	}, logger)
-	synthesizer, voice := tts.New(cfg.TTSEngine, tts.Config{
+	synthesizer, voice := tts.Open(cfg.TTSEngine, tts.Config{
 		SessionID:           sess.ID,
 		TempDir:             sess.TempDir,
 		ElevenAPIKey:        cfg.ElevenAPIKey,
@@ -202,7 +202,16 @@ func runCall(cfg *config.Config, logger *log.Logger, input io.Reader, output io.
 		YandexTTSRole:       cfg.YandexTTSRole,
 		StyleTags:           cfg.TTSStyleTags,
 		LogUtterances:       cfg.LogUtterances,
+		CallID:              ch.Vars["agi_uniqueid"],
+		CustomURL:           cfg.CustomTTSURL,
+		CustomToken:         cfg.CustomTTSToken,
+		CustomVoice:         cfg.CustomTTSVoice,
+		CustomLanguage:      cfg.CustomTTSLanguage,
+		FallbackEngine:      cfg.TTSFallbackEngine,
 	}, logger)
+	// Deferred after the summarizer, so it runs first: the call's place on the
+	// TTS server is given back at the hangup, not after the post-call report.
+	defer synthesizer.Close()
 	// The tutor writes the expression tags itself, so the vocabulary of the
 	// voice that will read the reply is appended to its system prompt. Which
 	// vocabulary that is depends on the TTS model, and the model is a vault
@@ -584,7 +593,7 @@ func hasSpeechScript(s, language string) bool {
 // from the tutor model so it fits the conversation; a fixed line stands in when
 // the model is unavailable, since silence is exactly what this branch exists to
 // avoid. Hold music is expected to be running — playTTS stops it.
-func promptForSpeech(ch *agi.Channel, sess *session.Session, synth tts.Synthesizer, dialog *llm.Conversation, cfg *config.Config, logger *log.Logger) bool {
+func promptForSpeech(ch *agi.Channel, sess *session.Session, synth tts.Speaker, dialog *llm.Conversation, cfg *config.Config, logger *log.Logger) bool {
 	line, err := dialog.Call(sess.ReadHistory(), cfg.SilencePrompt)
 	if err != nil || strings.TrimSpace(line) == "" {
 		logger.Printf("WARN nudge unavailable (%v), using the fixed line", err)
@@ -618,24 +627,57 @@ func loadPrompt(path string, logger *log.Logger) string {
 }
 
 // playTTS synthesizes the reply and streams it to the caller. Hold music is
-// expected to be running on entry: TTS is a network round trip (several seconds
-// on the hosted engines), so the music is stopped only after the audio file is
-// ready — otherwise the caller sits in silence for the whole synthesis. The
-// stop is unconditional so the music never survives a synthesis failure.
-func playTTS(ch *agi.Channel, sess *session.Session, synth tts.Synthesizer, text string, logger *log.Logger) bool {
-	wavPath, tmpFiles, err := synth.Synthesize(text)
-	sess.AddTempFiles(tmpFiles...)
-	ch.Cmd("EXEC StopMusicOnHold")
-	if err != nil {
-		logger.Printf("ERROR synthesizing: %v", err)
+// expected to be running on entry: TTS is a network round trip, so the music
+// is stopped only once the first audio is ready — otherwise the caller sits in
+// silence for the whole synthesis. The stop is unconditional so the music never
+// survives a synthesis failure.
+//
+// A reply that breaks off while it plays (only a streaming engine can do that)
+// is spoken again from the start, with hold music over the new request: the
+// caller hears a repeat rather than half an answer. The first repeat uses the
+// same voice; after a second break the Voice hands the reply to its fallback.
+func playTTS(ch *agi.Channel, sess *session.Session, synth tts.Speaker, text string, logger *log.Logger) bool {
+	for attempt := 1; ; attempt++ {
+		audio, err := synth.Speak(text)
+		ch.Cmd("EXEC StopMusicOnHold")
+		if err != nil {
+			sess.AddTempFiles(audio.Files()...)
+			logger.Printf("ERROR synthesizing: %v", err)
+			return ch.IsAlive()
+		}
+		heard, err := playAudio(ch, audio)
+		sess.AddTempFiles(audio.Files()...)
+		if err != nil && ch.IsAlive() {
+			if attempt < 3 {
+				logger.Printf("WARN TTS reply broke off during playback (%v), repeating it", err)
+				ch.Cmd("EXEC StartMusicOnHold " + mohClass)
+				continue
+			}
+			logger.Printf("ERROR TTS reply broke off during playback again: %v", err)
+		}
+		if heard && sess.SpokenRole != "" {
+			sess.WriteHistory(sess.SpokenRole, tts.PlainText(text))
+		}
 		return ch.IsAlive()
 	}
-	if !ch.IsAlive() {
-		return false
+}
+
+// playAudio plays every piece of a reply in order and reports whether the
+// caller heard all of it. The error belongs to a reply that broke off.
+func playAudio(ch *agi.Channel, audio tts.Audio) (bool, error) {
+	for {
+		path, err := audio.Next()
+		if path == "" {
+			return err == nil, err
+		}
+		if !ch.IsAlive() {
+			audio.Stop()
+			return false, nil
+		}
+		reply := ch.PlayAudio(path)
+		if result, ok := agi.Result(reply); !ch.IsAlive() || !ok || result < 0 {
+			audio.Stop()
+			return false, nil
+		}
 	}
-	reply := ch.PlayAudio(wavPath)
-	if result, ok := agi.Result(reply); sess.SpokenRole != "" && ok && result >= 0 {
-		sess.WriteHistory(sess.SpokenRole, tts.PlainText(text))
-	}
-	return ch.IsAlive()
 }

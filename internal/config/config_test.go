@@ -131,3 +131,27 @@ func TestRejectInvalidConversationPolicy(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomTTSSettingsAreSharedWithProfiles(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, ".env")
+	write(t, base, "PROFILE_IDS=psychologist\nTTS_ENGINE=custom\nTTS_FALLBACK_ENGINE=openrouter\nCUSTOM_TTS_URL=https://tts.invalid\nCUSTOM_TTS_TOKEN=secret\n")
+	if err := os.Mkdir(filepath.Join(dir, "profiles"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, "profiles", "psychologist.env"), "LANGUAGE=ru\nSKILL_FILE=/p.md\nGREETING_PROMPT=a\nSILENCE_PROMPT=b\nSILENCE_LINE=c\nGLITCH_LINE=d\nOUTAGE_LINE=e\nHISTORY_ROLE=f\nTTS_FALLBACK_ENGINE=elevenlabs\n")
+	german, err := LoadProfile(base, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if german.TTSEngine != "custom" || german.TTSFallbackEngine != "openrouter" || german.CustomTTSVoice != "female" || german.CustomTTSLanguage != "de-DE" {
+		t.Fatalf("custom TTS defaults: %+v", german)
+	}
+	named, err := LoadProfile(base, "psychologist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if named.CustomTTSURL != "https://tts.invalid" || named.CustomTTSToken != "secret" || named.TTSFallbackEngine != "elevenlabs" {
+		t.Fatalf("profile lost the shared TTS server or its own fallback: %+v", named)
+	}
+}
